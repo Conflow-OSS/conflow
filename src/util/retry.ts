@@ -1,3 +1,5 @@
+import { loadEnv } from "../config/load.js";
+import { retryableHttp } from "./http.js";
 import { logger } from "./logger.js";
 
 export interface RetryOptions {
@@ -43,4 +45,16 @@ export async function withRetry<T>(
     }
   }
   throw lastErr;
+}
+
+/** Standard retry policy for outbound API calls: env-tuned backoff + retry only transient failures. */
+export function apiRetry(label: string): RetryOptions {
+  const env = loadEnv();
+  return {
+    retries: env.LLM_MAX_RETRIES,
+    baseMs: env.RETRY_BASE_MS,
+    timeoutMs: env.LLM_TIMEOUT_MS,
+    label,
+    shouldRetry: retryableHttp,
+  };
 }

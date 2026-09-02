@@ -13,7 +13,7 @@ Full plan and the generation prompt:
 | M1 | Scaffold | ✅ |
 | M2 | Store layer (SQLite + sqlite-vec) | ✅ |
 | M3 | Embeddings (Voyage) + `seed` command | ✅ |
-| M4 | Model adapters (Z.ai / Vertex) + voice eval | ⏳ |
+| M4 | Model adapters (Z.ai / Vertex) + `test-model` | ✅ code · voice eval blocked on Vertex GLM access |
 | M5 | Prompt assembly | ⏳ |
 | M6–M8 | Matrix & case-study flows | ⏳ |
 | M9 | Dedup + flags | ⏳ |
@@ -34,7 +34,8 @@ npm run dev -- stats
 
 ```
 content migrate                                   create / update the schema
-content seed <dir>                                embed hand-written posts        [M3]
+content seed <dir>                                embed hand-written posts
+content test-model [--prompt <t>] [--system <f>]  one call to the configured channel
 content generate --flow matrix --topics-file f    matrix flow from a topic list   [M6]
 content generate --flow matrix --story-file f     matrix flow from a story        [M7]
 content generate --flow casestudy --story-file f  case-study flow                 [M8]

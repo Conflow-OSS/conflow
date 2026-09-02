@@ -102,10 +102,28 @@ program
 
 program
   .command("test-model")
-  .option("--prompt <text>", "prompt to send", "Say hi in one short sentence.")
-  .description("Send one prompt to the configured channel  [M4]")
-  .action(() => {
-    notYet("test-model", "M4");
+  .option("--prompt <text>", "user message", "In one short sentence, introduce yourself as a DevOps engineer.")
+  .option("--system <file>", "path to a system prompt file")
+  .description("Send one prompt to the configured channel")
+  .action(async (opts: { prompt: string; system?: string }) => {
+    const [{ getModel }, { readFileSync }] = await Promise.all([
+      import("./models/factory.js"),
+      import("node:fs"),
+    ]);
+    const model = getModel();
+    const system = opts.system
+      ? readFileSync(opts.system, "utf8")
+      : "You are a helpful assistant. Answer concisely.";
+    const started = Date.now();
+    const res = await model.generate({ system, user: opts.prompt });
+    process.stdout.write(res.text + "\n");
+    logger.info("test-model ok", {
+      channel: res.channel,
+      model: res.model,
+      finish: res.finishReason,
+      ms: Date.now() - started,
+      usage: res.usage,
+    });
   });
 
 function notYet(cmd: string, milestone: string): void {

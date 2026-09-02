@@ -1,7 +1,7 @@
 import { loadEnv } from "../config/load.js";
-import { HttpError, NonRetryableError, retryableHttp } from "../util/http.js";
+import { HttpError, NonRetryableError } from "../util/http.js";
 import { logger } from "../util/logger.js";
-import { withRetry } from "../util/retry.js";
+import { apiRetry, withRetry } from "../util/retry.js";
 
 const ENDPOINT = "https://api.voyageai.com/v1/embeddings";
 /** Voyage allows up to 1000 inputs per request; stay well under, and under any token cap. */
@@ -74,13 +74,10 @@ export async function embed(texts: string[], inputType: InputType): Promise<numb
 
   for (let i = 0; i < texts.length; i += MAX_BATCH) {
     const chunk = texts.slice(i, i + MAX_BATCH);
-    const vecs = await withRetry((signal) => embedBatch(chunk, inputType, signal), {
-      retries: env.LLM_MAX_RETRIES,
-      baseMs: env.RETRY_BASE_MS,
-      timeoutMs: env.LLM_TIMEOUT_MS,
-      label: `voyage embed [${i}..${i + chunk.length})`,
-      shouldRetry: retryableHttp,
-    });
+    const vecs = await withRetry(
+      (signal) => embedBatch(chunk, inputType, signal),
+      apiRetry(`voyage embed [${i}..${i + chunk.length})`),
+    );
     out.push(...vecs);
   }
 
