@@ -14,7 +14,7 @@ export const EnvSchema = z.object({
   HOOK_SPLIT: z.coerce.number().min(0).max(1).default(0.5),
 
   // model channel
-  MODEL_CHANNEL: z.enum(["zai", "vertex"]).default("zai"),
+  MODEL_CHANNEL: z.enum(["zai", "vertex"]).default("vertex"),
   MODEL_ID: z.string().min(1).default("glm-4.7"),
   ZAI_API_KEY: z.string().min(1).optional(),
   ZAI_BASE_URL: z.string().url().default("https://api.z.ai/api/paas/v4"),
