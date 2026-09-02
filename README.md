@@ -1,0 +1,57 @@
+# content-engine
+
+Local, human-in-the-loop LinkedIn content engine. Phase 1: generate a matrix of
+drafts in one voice, guard against repetition, hand the results to a person.
+
+Full plan and the generation prompt:
+<https://claude.ai/code/artifact/9e69a568-5b35-4206-a21c-8d2b2934a177>
+
+## Status
+
+| Milestone | What | State |
+|---|---|---|
+| M1 | Scaffold | ✅ |
+| M2 | Store layer (SQLite + sqlite-vec) | ✅ |
+| M3 | Embeddings + seed corpus | ⏳ |
+| M4 | Model adapters (Z.ai / Vertex) + voice eval | ⏳ |
+| M5 | Prompt assembly | ⏳ |
+| M6–M8 | Matrix & case-study flows | ⏳ |
+| M9 | Dedup + flags | ⏳ |
+| M10 | Export + hardening | ⏳ |
+
+## Quickstart
+
+```sh
+npm install
+cp .env.example .env        # fill in VOYAGE_API_KEY / ZAI_API_KEY when you reach M3/M4
+npm test                    # offline: schema, vectors, cosine
+npm run dev -- migrate      # create ./data/content.db
+npm run dev -- stats
+```
+
+## Commands
+
+```
+content migrate                                   create / update the schema
+content seed <dir>                                embed hand-written posts        [M3]
+content generate --flow matrix --topics-file f    matrix flow from a topic list   [M6]
+content generate --flow matrix --story-file f     matrix flow from a story        [M7]
+content generate --flow casestudy --story-file f  case-study flow                 [M8]
+content flags [--run <id>]                        list flagged posts
+content regenerate <post_id>                      re-run one slot                 [M9]
+content export <run_id> [--format md|json]        write a run to disk             [M10]
+content stats                                     quick overview
+```
+
+## Layout
+
+```
+src/
+  config/     env schema + loader (zod)
+  store/      db, migrate, runs, topics, posts, vec
+  util/       ids, cosine, logger, retry
+  cli.ts      command wiring
+test/         offline unit tests (vitest)
+seed/posts/   hand-written posts, one per file  (git-ignored content)
+data/         SQLite db + exports  (git-ignored)
+```
