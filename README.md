@@ -13,7 +13,7 @@ Full plan and the generation prompt:
 | M1 | Scaffold | ✅ |
 | M2 | Store layer (SQLite + sqlite-vec) | ✅ |
 | M3 | Embeddings (Voyage) + `seed` command | ✅ |
-| M4 | Model adapters (Z.ai / Vertex) + `test-model` | ✅ code · voice eval blocked on Vertex GLM access |
+| M4 | Model adapters (Z.ai / Vertex) + `test-model` + voice eval | ✅ |
 | M5 | Prompt assembly | ⏳ |
 | M6–M8 | Matrix & case-study flows | ⏳ |
 | M9 | Dedup + flags | ⏳ |
