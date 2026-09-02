@@ -12,7 +12,7 @@ Full plan and the generation prompt:
 |---|---|---|
 | M1 | Scaffold | ✅ |
 | M2 | Store layer (SQLite + sqlite-vec) | ✅ |
-| M3 | Embeddings + seed corpus | ⏳ |
+| M3 | Embeddings (Voyage) + `seed` command | ✅ |
 | M4 | Model adapters (Z.ai / Vertex) + voice eval | ⏳ |
 | M5 | Prompt assembly | ⏳ |
 | M6–M8 | Matrix & case-study flows | ⏳ |
@@ -23,9 +23,10 @@ Full plan and the generation prompt:
 
 ```sh
 npm install
-cp .env.example .env        # fill in VOYAGE_API_KEY / ZAI_API_KEY when you reach M3/M4
-npm test                    # offline: schema, vectors, cosine
+cp .env.example .env        # set VOYAGE_API_KEY; ZAI_API_KEY or Vertex ADC for M4
+npm test                    # offline: schema, vectors, cosine, voyage client, seed
 npm run dev -- migrate      # create ./data/content.db
+npm run dev -- seed ./seed/posts
 npm run dev -- stats
 ```
 

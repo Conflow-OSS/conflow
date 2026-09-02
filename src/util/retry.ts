@@ -7,6 +7,8 @@ export interface RetryOptions {
   /** per-attempt timeout; the AbortSignal fires when it elapses */
   timeoutMs?: number;
   label?: string;
+  /** return false to stop retrying a given error (defaults to always retry) */
+  shouldRetry?: (err: unknown) => boolean;
 }
 
 /**
@@ -29,7 +31,8 @@ export async function withRetry<T>(
       return await fn(ac.signal);
     } catch (err) {
       lastErr = err;
-      if (attempt === retries) break;
+      const retryable = opts.shouldRetry ? opts.shouldRetry(err) : true;
+      if (attempt === retries || !retryable) break;
       const delay = Math.round(baseMs * 2 ** attempt + Math.random() * baseMs);
       logger.warn(`${label}: attempt ${attempt + 1} failed, retrying in ${delay}ms`, {
         error: err instanceof Error ? err.message : String(err),

@@ -25,9 +25,15 @@ program
 program
   .command("seed")
   .argument("<dir>", "directory of hand-written posts (one per file)")
-  .description("Embed the seed corpus and store it as kind=seed  [M3]")
-  .action(() => {
-    notYet("seed", "M3");
+  .description("Embed the seed corpus and store it as kind=seed")
+  .action(async (dir: string) => {
+    const { seedCorpus } = await import("./pipeline/seed.js");
+    const r = await seedCorpus(dir);
+    process.stdout.write(
+      `seeded ${r.added} post(s) — ${r.short} short, ${r.long} long` +
+        (r.removed ? `, replaced ${r.removed}` : "") +
+        "\n",
+    );
   });
 
 program
@@ -111,8 +117,13 @@ function notYet(cmd: string, milestone: string): void {
   process.exitCode = 2;
 }
 
+process.on("exit", closeDb);
+
 try {
-  program.parse();
-} finally {
-  process.on("exit", closeDb);
+  await program.parseAsync();
+} catch (err) {
+  logger.error("command failed", {
+    error: err instanceof Error ? err.message : String(err),
+  });
+  process.exitCode = 1;
 }

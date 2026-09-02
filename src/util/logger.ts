@@ -7,7 +7,9 @@ function threshold(): number {
   return rank[lvl] ?? rank.info;
 }
 
-function emit(level: Level, msg: string, fields?: Record<string, unknown>): void {
+type Fields = Record<string, unknown> | object;
+
+function emit(level: Level, msg: string, fields?: Fields): void {
   if (rank[level] < threshold()) return;
   const line = JSON.stringify({ t: new Date().toISOString(), level, msg, ...fields });
   if (level === "warn" || level === "error") process.stderr.write(line + "\n");
@@ -15,8 +17,8 @@ function emit(level: Level, msg: string, fields?: Record<string, unknown>): void
 }
 
 export const logger = {
-  debug: (msg: string, fields?: Record<string, unknown>) => emit("debug", msg, fields),
-  info: (msg: string, fields?: Record<string, unknown>) => emit("info", msg, fields),
-  warn: (msg: string, fields?: Record<string, unknown>) => emit("warn", msg, fields),
-  error: (msg: string, fields?: Record<string, unknown>) => emit("error", msg, fields),
+  debug: (msg: string, fields?: Fields) => emit("debug", msg, fields),
+  info: (msg: string, fields?: Fields) => emit("info", msg, fields),
+  warn: (msg: string, fields?: Fields) => emit("warn", msg, fields),
+  error: (msg: string, fields?: Fields) => emit("error", msg, fields),
 };
