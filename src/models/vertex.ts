@@ -11,14 +11,17 @@ function googleAuth(): GoogleAuth {
   return cachedAuth;
 }
 
-/** OpenAI-compatible surface for Model Garden / MaaS models. */
+/**
+ * OpenAI-compatible surface for Model Garden / MaaS models. Note: the `openapi`
+ * endpoint lives under v1beta1, and MaaS model ids look like `zai-org/glm-4.7-maas`.
+ */
 export function chatUrl(project: string, location: string): string {
   const host =
     location === "global"
       ? "aiplatform.googleapis.com"
       : `${location}-aiplatform.googleapis.com`;
   return (
-    `https://${host}/v1/projects/${project}/locations/${location}` +
+    `https://${host}/v1beta1/projects/${project}/locations/${location}` +
     `/endpoints/openapi/chat/completions`
   );
 }

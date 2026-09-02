@@ -47,12 +47,12 @@ afterEach(() => {
 describe("chatUrl", () => {
   it("uses the global host for the global location", () => {
     expect(chatUrl("p", "global")).toBe(
-      "https://aiplatform.googleapis.com/v1/projects/p/locations/global/endpoints/openapi/chat/completions",
+      "https://aiplatform.googleapis.com/v1beta1/projects/p/locations/global/endpoints/openapi/chat/completions",
     );
   });
   it("uses a regional host otherwise", () => {
     expect(chatUrl("p", "us-central1")).toBe(
-      "https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/endpoints/openapi/chat/completions",
+      "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/p/locations/us-central1/endpoints/openapi/chat/completions",
     );
   });
 });
