@@ -3,7 +3,10 @@ import { apiRetry, withRetry } from "../util/retry.js";
 import type { Channel, GenerateResult } from "./types.js";
 
 interface ChatResponse {
-  choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+  choices?: Array<{
+    message?: { content?: string; reasoning_content?: string };
+    finish_reason?: string;
+  }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number };
   error?: { message?: string } | string;
 }
@@ -43,7 +46,15 @@ export async function openaiChat(c: ChatCall): Promise<GenerateResult> {
   const text = choice?.message?.content?.trim();
   if (!text) {
     const detail = typeof json.error === "string" ? json.error : json.error?.message;
-    throw new Error(`${c.channel}: empty completion${detail ? ` (${detail})` : ""}`);
+    const reason = choice?.finish_reason;
+    const hint =
+      reason === "length"
+        ? " — hit max_tokens; raise LLM_MAX_TOKENS (thinking models spend most of the budget on reasoning)"
+        : "";
+    throw new Error(
+      `${c.channel}: empty completion${reason ? ` (finish_reason=${reason})` : ""}${hint}` +
+        `${detail ? ` ${detail}` : ""}`,
+    );
   }
 
   return {

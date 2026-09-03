@@ -1,0 +1,5 @@
+// Copy this file, edit the lines, then: npx tsx scripts/voice-eval.ts --topics scripts/my-topics.jsonl
+// format: "short" | "long"     hook: "questions" | "callout" | "n/a"  (hook is ignored for short)
+{"topic": "Blue-green deployments on GKE", "angle": "shipping on a Friday without the fear", "format": "long", "hook": "questions"}
+{"topic": "Terraform remote state locking", "angle": "two engineers running apply at the same time", "format": "short", "hook": "n/a"}
+{"topic": "Horizontal Pod Autoscaler on custom metrics", "angle": "scaling on queue depth instead of CPU", "format": "long", "hook": "callout"}

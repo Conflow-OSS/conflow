@@ -49,7 +49,7 @@ export class VertexModel implements ContentModel {
       system: args.system,
       user: args.user,
       temperature: args.temperature ?? 0.8,
-      maxTokens: args.maxTokens ?? 4096,
+      maxTokens: args.maxTokens ?? env.LLM_MAX_TOKENS,
     });
   }
 }

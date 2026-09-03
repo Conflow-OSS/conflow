@@ -35,7 +35,8 @@ export const EnvSchema = z.object({
   DB_PATH: z.string().min(1).default("./data/content.db"),
   EXPORT_DIR: z.string().min(1).default("./data/exports"),
   LLM_MAX_RETRIES: z.coerce.number().int().nonnegative().default(3),
-  LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+  LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
+  LLM_MAX_TOKENS: z.coerce.number().int().positive().default(20_000),
   RETRY_BASE_MS: z.coerce.number().int().positive().default(500),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
