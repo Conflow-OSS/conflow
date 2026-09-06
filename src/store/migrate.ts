@@ -1,6 +1,22 @@
+import type DatabaseConstructor from "better-sqlite3";
 import { loadEnv } from "../config/load.js";
 import { logger } from "../util/logger.js";
 import { getDb } from "./db.js";
+
+type SqliteDatabase = DatabaseConstructor.Database;
+
+function addColumnIfMissing(
+  db: SqliteDatabase,
+  table: string,
+  column: string,
+  columnType: string,
+): void {
+  const existingColumns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  const alreadyThere = existingColumns.some((existing) => existing.name === column);
+  if (!alreadyThere) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${columnType}`);
+  }
+}
 
 /**
  * Idempotent schema creation. Safe to run on every startup.
@@ -61,6 +77,11 @@ export function migrate(): void {
     CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
     CREATE INDEX IF NOT EXISTS idx_topics_run   ON topics(run_id);
   `);
+
+  // Columns added after the first release — applied only if the database predates them.
+  addColumnIfMissing(db, "posts", "lesson_text", "TEXT");
+  addColumnIfMissing(db, "posts", "summary", "TEXT");
+  addColumnIfMissing(db, "posts", "summary_char_count", "INTEGER");
 
   // EMBED_DIM is a validated positive integer, safe to interpolate.
   db.exec(

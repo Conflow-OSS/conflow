@@ -4,6 +4,8 @@ export interface ParsedPost {
   topicAngle: string | null;
   body: string;
   charCountFromModel: number | null;
+  summary: string | null;
+  summaryCharCountFromModel: number | null;
 }
 
 export function parsePostXml(modelResponse: string): ParsedPost {
@@ -12,15 +14,14 @@ export function parsePostXml(modelResponse: string): ParsedPost {
     throw new Error("model response has no <body> tag");
   }
 
-  const charCountText = extractTagContent(modelResponse, "char_count");
-  const charCountFromModel = charCountText ? Number.parseInt(charCountText, 10) : NaN;
-
   return {
     format: extractTagContent(modelResponse, "format"),
     hookStyle: extractTagContent(modelResponse, "hook_style"),
     topicAngle: extractTagContent(modelResponse, "topic_angle"),
     body,
-    charCountFromModel: Number.isNaN(charCountFromModel) ? null : charCountFromModel,
+    charCountFromModel: extractNumberTag(modelResponse, "char_count"),
+    summary: extractTagContent(modelResponse, "summary"),
+    summaryCharCountFromModel: extractNumberTag(modelResponse, "summary_char_count"),
   };
 }
 
@@ -40,4 +41,11 @@ function extractTagContent(text: string, tagName: string): string | null {
   const tagPattern = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, "i");
   const match = text.match(tagPattern);
   return match ? match[1]!.trim() : null;
+}
+
+function extractNumberTag(text: string, tagName: string): number | null {
+  const raw = extractTagContent(text, tagName);
+  if (raw === null) return null;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isNaN(parsed) ? null : parsed;
 }

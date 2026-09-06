@@ -11,6 +11,8 @@ Here is the body of the post.
 
 #DevOps #IaC</body>
   <char_count>84</char_count>
+  <summary>Promote the exact same Terraform code from staging to prod and drift disappears.</summary>
+  <summary_char_count>78</summary_char_count>
 </post>`;
 
 describe("parsePostXml", () => {
@@ -22,6 +24,16 @@ describe("parsePostXml", () => {
     expect(parsed.body).toContain("What if your environments never drifted apart again??");
     expect(parsed.body).toContain("#DevOps #IaC");
     expect(parsed.charCountFromModel).toBe(84);
+    expect(parsed.summary).toBe(
+      "Promote the exact same Terraform code from staging to prod and drift disappears.",
+    );
+    expect(parsed.summaryCharCountFromModel).toBe(78);
+  });
+
+  it("returns null summary fields when the model omits them", () => {
+    const parsed = parsePostXml("<post><body>a post without a summary</body></post>");
+    expect(parsed.summary).toBeNull();
+    expect(parsed.summaryCharCountFromModel).toBeNull();
   });
 
   it("still works when the model wraps the XML in a code fence and chatter", () => {

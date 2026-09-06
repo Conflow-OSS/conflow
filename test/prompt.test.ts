@@ -5,10 +5,13 @@ function longQuestionsRequest(overrides: Partial<PostRequest> = {}): PostRequest
   return {
     topic: "Blue-green deployments on GKE",
     angle: "shipping on a Friday without the fear",
+    lesson: "a bad release is a 30-second traffic switch, not a redeploy",
+    otherLessons: [],
     format: "long",
     hookStyle: "questions",
     variantNumber: 2,
     variantCount: 3,
+    summaryMaxChars: 180,
     ...overrides,
   };
 }
@@ -34,31 +37,31 @@ describe("assemblePrompt — task prompt", () => {
     expect(user).not.toMatch(/\{\{[a-z_]+\}\}/);
     expect(user).toContain("Blue-green deployments on GKE");
     expect(user).toContain("shipping on a Friday without the fear");
-    expect(user).toContain("FORMAT:       long");
-    expect(user).toContain("HOOK_STYLE:   questions");
-    expect(user).toContain("VARIANT:      2 of 3");
+    expect(user).toContain("a bad release is a 30-second traffic switch");
+    expect(user).toContain("FORMAT:            long");
+    expect(user).toContain("HOOK_STYLE:        questions");
+    expect(user).toContain("VARIANT:           2 of 3");
+    expect(user).toContain("SUMMARY_MAX_CHARS: 180");
   });
 
   it("forces hook style to n/a for the short format", () => {
     const { user } = assemblePrompt(longQuestionsRequest({ format: "short", hookStyle: null }));
-    expect(user).toContain("HOOK_STYLE:   n/a");
+    expect(user).toContain("HOOK_STYLE:        n/a");
   });
 
   it("shows the empty labels when no context is supplied", () => {
     const { user } = assemblePrompt(longQuestionsRequest());
-    expect(user).toContain("(none — advisory mode)");
-    expect(user).toContain("(none yet)");
+    expect(user).toContain("(none — advisory mode)"); // source facts
+    expect(user).toMatch(/OTHER LESSONS FOR THIS ANGLE[\s\S]*\(none\)/);
   });
 
-  it("lists sibling and near-duplicate posts when supplied", () => {
+  it("lists the other lessons as a bullet list", () => {
     const { user } = assemblePrompt(
       longQuestionsRequest({
-        siblingPosts: ["First sibling post body.", "Second sibling post body."],
-        nearDuplicatePosts: ["An older published post."],
+        otherLessons: ["you can test DB migrations on green first", "rollback needs no scripts"],
       }),
     );
-    expect(user).toContain("--- 1 ---\nFirst sibling post body.");
-    expect(user).toContain("--- 2 ---\nSecond sibling post body.");
-    expect(user).toContain("--- 1 ---\nAn older published post.");
+    expect(user).toContain("- you can test DB migrations on green first");
+    expect(user).toContain("- rollback needs no scripts");
   });
 });

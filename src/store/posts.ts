@@ -16,7 +16,9 @@ export interface NewPost {
   format: PostFormat;
   hook_style?: HookStyle;
   topic_angle?: string | null;
+  lesson_text?: string | null;
   body: string;
+  summary?: string | null;
   status?: PostStatus;
   flag_reason?: string | null;
   dup_of_id?: string | null;
@@ -26,15 +28,16 @@ export interface NewPost {
 }
 
 const COLUMNS = `id, kind, run_id, topic_id, variant_index, format, hook_style,
-  topic_angle, body, char_count, status, flag_reason, dup_of_id, dup_score,
-  model_channel, model_id, created_at`;
+  topic_angle, lesson_text, body, char_count, summary, summary_char_count, status,
+  flag_reason, dup_of_id, dup_score, model_channel, model_id, created_at`;
 
 /** Character count by code point — closer to how a person (and LinkedIn) counts. */
-export function charCount(body: string): number {
-  return [...body].length;
+export function charCount(text: string): number {
+  return [...text].length;
 }
 
 export function insertPost(p: NewPost): PostRow {
+  const summary = p.summary ?? null;
   const row: PostRow = {
     id: newId(),
     kind: p.kind,
@@ -44,8 +47,11 @@ export function insertPost(p: NewPost): PostRow {
     format: p.format,
     hook_style: p.hook_style ?? null,
     topic_angle: p.topic_angle ?? null,
+    lesson_text: p.lesson_text ?? null,
     body: p.body,
     char_count: charCount(p.body),
+    summary,
+    summary_char_count: summary === null ? null : charCount(summary),
     status: p.status ?? "ok",
     flag_reason: p.flag_reason ?? null,
     dup_of_id: p.dup_of_id ?? null,
@@ -58,8 +64,8 @@ export function insertPost(p: NewPost): PostRow {
     .prepare(
       `INSERT INTO posts (${COLUMNS}) VALUES
        (@id, @kind, @run_id, @topic_id, @variant_index, @format, @hook_style,
-        @topic_angle, @body, @char_count, @status, @flag_reason, @dup_of_id,
-        @dup_score, @model_channel, @model_id, @created_at)`,
+        @topic_angle, @lesson_text, @body, @char_count, @summary, @summary_char_count,
+        @status, @flag_reason, @dup_of_id, @dup_score, @model_channel, @model_id, @created_at)`,
     )
     .run(row);
   return row;

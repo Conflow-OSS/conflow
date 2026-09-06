@@ -31,10 +31,19 @@ const fakeModel: ContentModel = {
     if (user.includes("distinct angles")) {
       return { text: "<angles><angle>one clear angle</angle></angles>", channel: "vertex", model: "fake-glm" };
     }
+    if (user.includes("distinct lessons")) {
+      return {
+        text: "<lessons><lesson>lesson one</lesson><lesson>lesson two</lesson></lessons>",
+        channel: "vertex",
+        model: "fake-glm",
+      };
+    }
     generationCounter++;
-    const body = `attempt ${generationCounter} ` + "word ".repeat(240);
+    const body = (`attempt ${generationCounter} ` + "word ".repeat(240)).trim();
     return {
-      text: `<post><format>long</format><hook_style>questions</hook_style><topic_angle>a</topic_angle><body>${body.trim()}</body></post>`,
+      text:
+        `<post><format>long</format><hook_style>questions</hook_style><topic_angle>a</topic_angle>` +
+        `<body>${body}</body><summary>summary for attempt ${generationCounter}</summary></post>`,
       channel: "vertex",
       model: "fake-glm",
     };

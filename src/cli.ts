@@ -123,7 +123,13 @@ program
           `${post.status} · ${post.char_count} chars ━━━\n`,
       );
       if (topic) {
-        process.stdout.write(`topic:  ${topic.base_text}\nangle:  ${topic.angle_text}\n`);
+        process.stdout.write(`topic:   ${topic.base_text}\nangle:   ${topic.angle_text}\n`);
+      }
+      if (post.lesson_text) {
+        process.stdout.write(`lesson:  ${post.lesson_text}\n`);
+      }
+      if (post.summary) {
+        process.stdout.write(`summary: ${post.summary}  (${post.summary_char_count} chars)\n`);
       }
       process.stdout.write(`\n${post.body}\n`);
     });

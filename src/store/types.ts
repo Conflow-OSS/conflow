@@ -38,8 +38,11 @@ export interface PostRow {
   format: PostFormat;
   hook_style: HookStyle;
   topic_angle: string | null;
+  lesson_text: string | null;
   body: string;
   char_count: number;
+  summary: string | null;
+  summary_char_count: number | null;
   status: PostStatus;
   flag_reason: string | null;
   dup_of_id: string | null;

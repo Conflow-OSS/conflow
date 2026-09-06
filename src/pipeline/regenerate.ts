@@ -49,16 +49,21 @@ export async function regeneratePost(
     run?.flow === "casestudy" ? (run.input_text ?? undefined) : undefined;
 
   const siblings = standingVariantsOfTopic(oldPost.topic_id, postId);
+  const lesson = oldPost.lesson_text ?? topic.angle_text;
+  const otherLessons = siblings
+    .map((sibling) => sibling.lesson_text)
+    .filter((lessonText): lessonText is string => lessonText !== null);
 
   const variant = await generateOneVariant(
     {
       topic: topic.base_text,
       angle: topic.angle_text,
+      lesson,
+      otherLessons,
       format: oldPost.format,
       hookStyle: oldPost.hook_style,
       variantNumber: (oldPost.variant_index ?? 0) + 1,
       variantCount: readPostsPerAngle(run?.config_json) ?? env.GEN_Z,
-      previousVariantBodies: siblings.map((sibling) => sibling.body),
       sourceFacts,
     },
     model,
@@ -95,7 +100,9 @@ export async function regeneratePost(
     format: oldPost.format,
     hook_style: oldPost.hook_style,
     topic_angle: variant.parsed.topicAngle,
+    lesson_text: lesson,
     body: variant.parsed.body,
+    summary: variant.parsed.summary,
     status,
     flag_reason: flagReason,
     dup_of_id: duplicateOfPostId,

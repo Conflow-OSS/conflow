@@ -18,6 +18,8 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { loadEnv } from "../src/config/load.js";
 import { getModel } from "../src/models/factory.js";
+import { expandAngleIntoLessons } from "../src/pipeline/expand.js";
+import { parsePostXml } from "../src/pipeline/parse.js";
 import { assemblePrompt } from "../src/prompt/assemble.js";
 import type { HookStyle } from "../src/store/types.js";
 import { logger } from "../src/util/logger.js";
@@ -98,18 +100,25 @@ async function main() {
     const label = String(index + 1).padStart(2, "0");
     try {
       const startedAt = Date.now();
+      const [lesson] = await expandAngleIntoLessons(testCase.topic, testCase.angle, 1, model);
       const { system, user } = assemblePrompt({
         topic: testCase.topic,
         angle: testCase.angle,
+        lesson: lesson ?? testCase.angle,
+        otherLessons: [],
         format: testCase.format,
         hookStyle: toHookStyle(testCase.hook),
         variantNumber: 1,
         variantCount: 1,
+        summaryMaxChars: env.SUMMARY_MAX_CHARS,
       });
       const result = await model.generate({ system, user });
+      const parsed = parsePostXml(result.text);
       const elapsedMs = Date.now() - startedAt;
       const header =
-        `<!-- topic: ${testCase.topic}\n     angle: ${testCase.angle}\n` +
+        `<!-- topic:   ${testCase.topic}\n     angle:   ${testCase.angle}\n` +
+        `     lesson:  ${lesson ?? "(fell back to angle)"}\n` +
+        `     summary: ${parsed.summary ?? "(none)"}  [${parsed.summary ? [...parsed.summary].length : 0} chars]\n` +
         `     format: ${testCase.format}  hook: ${testCase.hook}\n` +
         `     model: ${env.MODEL_CHANNEL}/${model.model}  ${elapsedMs}ms  ` +
         `tokens: ${result.usage?.completionTokens ?? "?"}  finish: ${result.finishReason ?? "?"} -->\n\n`;

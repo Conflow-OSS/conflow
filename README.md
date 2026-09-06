@@ -19,6 +19,7 @@ Full plan and the generation prompt:
 | M7 | Matrix flow — story → topics | ✅ |
 | M8 | Case-study flow | ✅ |
 | M9 | Dedup + flags + regenerate | ✅ |
+| M9.5 | Lesson-driven Z variants + card summary | ✅ |
 | M10 | Export + hardening | ⏳ |
 
 ## Quickstart

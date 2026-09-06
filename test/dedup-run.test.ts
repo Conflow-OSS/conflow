@@ -36,10 +36,20 @@ const identicalOutputModel: ContentModel = {
         model: "fake-glm",
       };
     }
-    const angle = user.match(/ANGLE:\s*(.+?)(?:\s+—|$)/m)?.[1]?.trim() ?? "angle";
-    const body = `a stable post about ${angle} ` + "word ".repeat(240);
+    if (user.includes("distinct lessons")) {
+      return {
+        text: "<lessons><lesson>lesson one</lesson><lesson>lesson two</lesson></lessons>",
+        channel: "vertex",
+        model: "fake-glm",
+      };
+    }
+    // Same body for every lesson of an angle -> the second variant must flag as a duplicate.
+    const angle = user.match(/ANGLE:\s*(.+)/)?.[1]?.trim() ?? "angle";
+    const body = (`a stable post about ${angle} ` + "word ".repeat(240)).trim();
     return {
-      text: `<post><format>long</format><hook_style>questions</hook_style><topic_angle>${angle}</topic_angle><body>${body.trim()}</body></post>`,
+      text:
+        `<post><format>long</format><hook_style>questions</hook_style><topic_angle>${angle}</topic_angle>` +
+        `<body>${body}</body><summary>a stable summary about ${angle}</summary></post>`,
       channel: "vertex",
       model: "fake-glm",
     };

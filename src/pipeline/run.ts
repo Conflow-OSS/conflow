@@ -10,7 +10,7 @@ import type { Flow, InputKind } from "../store/types.js";
 import { upsertEmbedding } from "../store/vec.js";
 import { logger } from "../util/logger.js";
 import { type EmbeddedPost, findDuplicate, loadLedgerEmbeddings } from "./dedup.js";
-import { expandStoryIntoTopics, expandTopicIntoAngles } from "./expand.js";
+import { expandAngleIntoLessons, expandStoryIntoTopics, expandTopicIntoAngles } from "./expand.js";
 import { type GeneratedVariant, generateOneVariant } from "./generate.js";
 import { loadTopicList } from "./inputs.js";
 import { type PostSlot, planPostSlots } from "./plan.js";
@@ -140,14 +140,18 @@ async function runMatrix(input: {
         angle_index: angleIndex,
       });
 
+      const lessons = await expandAngleIntoLessons(baseTopic, angle, postsPerAngle, model, sourceFacts);
+      logger.info("angle expanded into lessons", { angle, lessons });
+
       const slotsForThisAngle = postSlots.slice(nextSlotIndex, nextSlotIndex + postsPerAngle);
       nextSlotIndex += postsPerAngle;
 
-      const angleTotals = await generateAndPersistVariants({
+      const angleTotals = await generateAndPersistLessons({
         runId: run.id,
         topicId: topicRow.id,
         baseTopic,
         angle,
+        lessons,
         slots: slotsForThisAngle,
         sourceFacts,
         model,
@@ -163,37 +167,40 @@ async function runMatrix(input: {
   return { runId: run.id, ...totals };
 }
 
-async function generateAndPersistVariants(input: {
+async function generateAndPersistLessons(input: {
   runId: string;
   topicId: string;
   baseTopic: string;
   angle: string;
+  lessons: string[];
   slots: PostSlot[];
   sourceFacts?: string;
   model: ContentModel;
 }): Promise<{ created: number; flaggedForLength: number; flaggedAsDuplicate: number }> {
   const env = loadEnv();
 
-  // Phase 1 — generate every variant, feeding the earlier ones back so the model varies them.
-  const generatedVariants: Array<{ variant: GeneratedVariant; slot: PostSlot }> = [];
-  const previousVariantBodies: string[] = [];
-  for (let variantIndex = 0; variantIndex < input.slots.length; variantIndex++) {
-    const slot = input.slots[variantIndex]!;
+  // Phase 1 — one post per lesson. Each post is told the other lessons so it stays on its own.
+  const generatedVariants: Array<{ variant: GeneratedVariant; slot: PostSlot; lesson: string }> = [];
+  for (let lessonIndex = 0; lessonIndex < input.lessons.length; lessonIndex++) {
+    const lesson = input.lessons[lessonIndex]!;
+    const slot = input.slots[lessonIndex]!;
+    const otherLessons = input.lessons.filter((_, index) => index !== lessonIndex);
+
     const variant = await generateOneVariant(
       {
         topic: input.baseTopic,
         angle: input.angle,
+        lesson,
+        otherLessons,
         format: slot.format,
         hookStyle: slot.hookStyle,
-        variantNumber: variantIndex + 1,
-        variantCount: input.slots.length,
-        previousVariantBodies,
+        variantNumber: lessonIndex + 1,
+        variantCount: input.lessons.length,
         sourceFacts: input.sourceFacts,
       },
       input.model,
     );
-    generatedVariants.push({ variant, slot });
-    previousVariantBodies.push(variant.parsed.body);
+    generatedVariants.push({ variant, slot, lesson });
   }
 
   // Phase 2 — embed them all at once, then dedup-check and store each in order.
@@ -204,7 +211,7 @@ async function generateAndPersistVariants(input: {
   const totals = { created: 0, flaggedForLength: 0, flaggedAsDuplicate: 0 };
 
   for (let variantIndex = 0; variantIndex < generatedVariants.length; variantIndex++) {
-    const { variant, slot } = generatedVariants[variantIndex]!;
+    const { variant, slot, lesson } = generatedVariants[variantIndex]!;
     const embedding = embeddings[variantIndex]!;
 
     let status = variant.status;
@@ -236,7 +243,9 @@ async function generateAndPersistVariants(input: {
       format: slot.format,
       hook_style: slot.hookStyle,
       topic_angle: variant.parsed.topicAngle,
+      lesson_text: lesson,
       body: variant.parsed.body,
+      summary: variant.parsed.summary,
       status,
       flag_reason: flagReason,
       dup_of_id: duplicateOfPostId,

@@ -54,17 +54,20 @@ FORMAT MECHANICS   (both formats)
 • Return the body EXACTLY as it should be pasted into LinkedIn, hashtags on the final line.
 
 ==============================================
-FORMAT: LONG    (target 900–1,600 characters)
+FORMAT: LONG    (target 900–1,100 characters)
 ==============================================
+The post has ONE job: make the LESSON land, seen through the ANGLE. Everything below serves
+that one point.
 1. HOOK — variant A or B, set by HOOK_STYLE in the task.
 2. ---
-3. CONTEXT — one paragraph, 3–4 sentences, plain and grounded: what the topic is, why an
-   infrastructure team should care.
-4. BENEFIT POINTS — 3–4 "• " bullets. Each = one concrete scenario + the result to expect.
-   Model: "• When a customer request fails across six microservices at 2am, distributed
-   tracing points you straight at the hop that broke — minutes to find it, not a lost
-   afternoon." Outcomes must be realistic and HEDGED ("teams often see…", "this can cut…")
-   UNLESS a specific figure is supplied in SOURCE FACTS.
+3. CONTEXT — one paragraph, 3–4 sentences, plain and grounded: what the topic is, and why
+   the LESSON matters to an infrastructure team.
+4. BENEFIT POINTS — 3–4 "• " bullets. Each is a different situation where the LESSON shows
+   up — one concrete scenario + the result to expect. They are facets of the same lesson,
+   not separate benefits. Model: "• When a customer request fails across six microservices
+   at 2am, distributed tracing points you straight at the hop that broke — minutes to find
+   it, not a lost afternoon." Outcomes must be realistic and HEDGED ("teams often see…",
+   "this can cut…") UNLESS a specific figure is supplied in SOURCE FACTS.
 5. ---
 6. CLOSE — go STRAIGHT from the last bullet into the "I'm Prince" sentence. Write NO
    concluding, summarizing, or aphoristic sentence before it. This is the single most
@@ -102,10 +105,11 @@ FORMAT: LONG    (target 900–1,600 characters)
 ==============================================
 FORMAT: SHORT    (target 300–600 characters)
 ==============================================
-ONE plain, understated thought — like a quick note typed out between tasks, not a crafted
-micro-post. NO --- dividers. NO bullets. NO "who I am" sign-off. NO call to action. NO
-takeaway line. HOOK_STYLE is ignored. The SHORT canonical example below is the reference
-for register: mild, a little rambling, no punchlines, no selling.
+ONE plain, understated thought — the LESSON, stated plainly, is the whole post. Like a quick
+note typed out between tasks, not a crafted micro-post. NO --- dividers. NO bullets. NO "who
+I am" sign-off. NO call to action. NO takeaway line. HOOK_STYLE is ignored. The SHORT
+canonical example below is the reference for register: mild, a little rambling, no
+punchlines, no selling.
 
   Line 1 — state the observation directly, starting on the actual subject. Do NOT open with
     a filler lead-in: no "Honestly,", "Real talk,", "Look,", "Here's the thing,", "Funny
@@ -177,4 +181,9 @@ OUTPUT   (return ONLY this XML, nothing else)
   <topic_angle>one line naming the specific angle this variant takes</topic_angle>
   <body>the full post, exactly as it should be pasted into LinkedIn, hashtags on the last line</body>
   <char_count>integer — character count of the body</char_count>
+  <summary>one sentence, at most SUMMARY_MAX_CHARS characters — the LESSON as a standalone,
+    quotable line in Prince's voice. It goes on an image card, so it must stand completely
+    alone: no "this", no "as above", no reference to the post. Plain and pointed, never
+    salesy. It leans on the lesson, not the topic.</summary>
+  <summary_char_count>integer — character count of the summary</summary_char_count>
 </post>

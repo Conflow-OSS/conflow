@@ -13,13 +13,16 @@ const goldenExampleFileByPlaceholder = {
 export interface PostRequest {
   topic: string;
   angle: string;
+  lesson: string;
   format: PostFormat;
   hookStyle: HookStyle;
   variantNumber: number;
   variantCount: number;
+  summaryMaxChars: number;
+  /** the other lessons under this angle — sibling posts cover these, this one must not */
+  otherLessons?: string[];
   sourceFacts?: string;
   retrievedStyleExamples?: string[];
-  siblingPosts?: string[];
   nearDuplicatePosts?: string[];
 }
 
@@ -59,13 +62,15 @@ function buildTaskPrompt(request: PostRequest): string {
   const valueByPlaceholder: Record<string, string> = {
     "{{topic}}": request.topic,
     "{{angle}}": request.angle,
+    "{{lesson}}": request.lesson,
     "{{format}}": request.format,
     "{{hook_style}}": resolveHookStyle(request),
     "{{k}}": String(request.variantNumber),
     "{{z}}": String(request.variantCount),
+    "{{summary_max_chars}}": String(request.summaryMaxChars),
+    "{{other_lessons}}": formatBulletList(request.otherLessons, "(none)"),
     "{{source_facts}}": request.sourceFacts?.trim() || "(none — advisory mode)",
     "{{retrieved_style_examples}}": formatExampleList(request.retrievedStyleExamples, "(none)"),
-    "{{sibling_posts}}": formatExampleList(request.siblingPosts, "(none yet)"),
     "{{near_duplicate_context}}": formatExampleList(request.nearDuplicatePosts, "(none)"),
   };
 
@@ -74,6 +79,13 @@ function buildTaskPrompt(request: PostRequest): string {
     taskPrompt = taskPrompt.replaceAll(placeholder, value);
   }
   return taskPrompt;
+}
+
+function formatBulletList(items: string[] | undefined, textWhenEmpty: string): string {
+  if (items === undefined || items.length === 0) {
+    return textWhenEmpty;
+  }
+  return items.map((item) => `- ${item.trim()}`).join("\n");
 }
 
 function formatExampleList(posts: string[] | undefined, textWhenEmpty: string): string {

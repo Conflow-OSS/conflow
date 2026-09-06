@@ -30,6 +30,7 @@ export const EnvSchema = z.object({
   DEDUP_LEDGER_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
   DEDUP_SIBLING_THRESHOLD: z.coerce.number().min(0).max(1).default(0.93),
   LENGTH_TOLERANCE: z.coerce.number().min(0).max(1).default(0.15),
+  SUMMARY_MAX_CHARS: z.coerce.number().int().positive().default(180),
 
   // paths / runtime
   DB_PATH: z.string().min(1).default("./data/content.db"),

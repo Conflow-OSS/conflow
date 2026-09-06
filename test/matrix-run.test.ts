@@ -45,6 +45,11 @@ function tagList(tagName: string, count: number): string {
 
 const postGenerationPrompts: string[] = [];
 
+function fieldFromPrompt(prompt: string, name: string): string {
+  // stop at an inline " — explanation" or the end of the line
+  return prompt.match(new RegExp(`${name}:\\s*(.+?)(?:\\s+—|$)`, "m"))?.[1]?.trim() ?? "";
+}
+
 const fakeModel: ContentModel = {
   channel: "vertex",
   model: "fake-glm",
@@ -56,24 +61,25 @@ const fakeModel: ContentModel = {
     if (user.includes("distinct angles")) {
       return { text: tagList("angle", requestedCount), channel: "vertex", model: "fake-glm" };
     }
+    if (user.includes("distinct lessons")) {
+      return { text: tagList("lesson", requestedCount), channel: "vertex", model: "fake-glm" };
+    }
 
     postGenerationPrompts.push(user);
-    const topic = user.match(/TOPIC:\s*(.+)/)?.[1]?.trim() ?? "";
-    const angle = user.match(/ANGLE:\s*(.+?)(?:\s+—|$)/)?.[1]?.trim() ?? "";
-    const variantNumber = user.match(/VARIANT:\s*(\d+)/)?.[1] ?? "1";
-    const format = user.match(/FORMAT:\s*(\w+)/)?.[1] ?? "long";
+    const topic = fieldFromPrompt(user, "TOPIC");
+    const angle = fieldFromPrompt(user, "ANGLE");
+    const lesson = fieldFromPrompt(user, "LESSON");
+    const format = fieldFromPrompt(user, "FORMAT") || "long";
 
-    // A topic containing "SAMEPOST" makes every variant identical, to exercise dedup.
-    const marker = topic.includes("SAMEPOST")
-      ? `${topic} ${angle}`
-      : `${topic} ${angle} v${variantNumber}`;
-    const body = fillerBody(marker, format);
+    const body = fillerBody(`${topic} ${angle} ${lesson}`, format);
+    const summary = `Lesson: ${lesson}`;
 
     return {
       text:
         `<post><format>${format}</format><hook_style>questions</hook_style>` +
         `<topic_angle>${angle}</topic_angle><body>${body}</body>` +
-        `<char_count>${body.length}</char_count></post>`,
+        `<char_count>${body.length}</char_count>` +
+        `<summary>${summary}</summary><summary_char_count>${summary.length}</summary_char_count></post>`,
       channel: "vertex",
       model: "fake-glm",
     };
@@ -113,6 +119,33 @@ describe("runMatrixFlowFromTopicList — 3 topics, Y=2, Z=2", () => {
 
   it("creates 12 posts with the planned format split", () => {
     expect(countPostsByFormat(runId)).toEqual({ short: 6, long: 6 });
+  });
+
+  it("stores a distinct lesson and a summary on every post", () => {
+    const rows = getDb()
+      .prepare(
+        `SELECT topic_id, lesson_text, summary, summary_char_count FROM posts WHERE run_id = ?`,
+      )
+      .all(runId) as Array<{
+      topic_id: string;
+      lesson_text: string | null;
+      summary: string | null;
+      summary_char_count: number | null;
+    }>;
+
+    expect(rows.every((row) => row.lesson_text && row.summary)).toBe(true);
+    expect(rows.every((row) => row.summary_char_count === [...row.summary!].length)).toBe(true);
+
+    // the two lessons under each angle must be different
+    const lessonsByTopic = new Map<string, Set<string>>();
+    for (const row of rows) {
+      const set = lessonsByTopic.get(row.topic_id) ?? new Set<string>();
+      set.add(row.lesson_text!);
+      lessonsByTopic.set(row.topic_id, set);
+    }
+    for (const lessons of lessonsByTopic.values()) {
+      expect(lessons.size).toBe(2);
+    }
   });
 
   it("splits the long posts between the two hook styles", () => {
