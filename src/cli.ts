@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { loadEnv } from "./config/load.js";
+import type { MatrixRunResult } from "./pipeline/run.js";
 import { closeDb } from "./store/db.js";
 import { migrate } from "./store/migrate.js";
 import { countByStatus, listByRun, listFlagged } from "./store/posts.js";
@@ -44,50 +45,34 @@ program
   .option("--story-file <path>", "a long story / case study")
   .description("Run a generation flow")
   .action(async (opts: { flow: string; topicsFile?: string; storyFile?: string }) => {
+    const [{ getModel }, run] = await Promise.all([
+      import("./models/factory.js"),
+      import("./pipeline/run.js"),
+    ]);
+
+    let result: MatrixRunResult | null = null;
     if (opts.flow === "matrix" && opts.topicsFile) {
-      const [{ getModel }, { runMatrixFlowFromTopicList }] = await Promise.all([
-        import("./models/factory.js"),
-        import("./pipeline/run.js"),
-      ]);
-      const result = await runMatrixFlowFromTopicList(opts.topicsFile, getModel());
-      process.stdout.write(
-        `run ${result.runId}: ${result.postsCreated} posts created` +
-          (result.flaggedForLength ? `, ${result.flaggedForLength} flagged for length` : "") +
-          "\n",
+      result = await run.runMatrixFlowFromTopicList(opts.topicsFile, getModel());
+    } else if (opts.flow === "matrix" && opts.storyFile) {
+      result = await run.runMatrixFlowFromStory(opts.storyFile, getModel());
+    } else if (opts.flow === "casestudy" && opts.storyFile) {
+      result = await run.runCaseStudyFlow(opts.storyFile, getModel());
+    }
+
+    if (!result) {
+      logger.error(
+        "expected: --flow matrix (--topics-file | --story-file), or --flow casestudy --story-file",
+        { flow: opts.flow },
       );
+      process.exitCode = 2;
       return;
     }
-    if (opts.flow === "matrix" && opts.storyFile) {
-      const [{ getModel }, { runMatrixFlowFromStory }] = await Promise.all([
-        import("./models/factory.js"),
-        import("./pipeline/run.js"),
-      ]);
-      const result = await runMatrixFlowFromStory(opts.storyFile, getModel());
-      process.stdout.write(
-        `run ${result.runId}: ${result.postsCreated} posts created` +
-          (result.flaggedForLength ? `, ${result.flaggedForLength} flagged for length` : "") +
-          "\n",
-      );
-      return;
-    }
-    if (opts.flow === "casestudy" && opts.storyFile) {
-      const [{ getModel }, { runCaseStudyFlow }] = await Promise.all([
-        import("./models/factory.js"),
-        import("./pipeline/run.js"),
-      ]);
-      const result = await runCaseStudyFlow(opts.storyFile, getModel());
-      process.stdout.write(
-        `run ${result.runId}: ${result.postsCreated} posts created` +
-          (result.flaggedForLength ? `, ${result.flaggedForLength} flagged for length` : "") +
-          "\n",
-      );
-      return;
-    }
-    logger.error(
-      "expected: --flow matrix (--topics-file | --story-file), or --flow casestudy --story-file",
-      { flow: opts.flow },
-    );
-    process.exitCode = 2;
+
+    const flagNotes: string[] = [];
+    if (result.flaggedForLength) flagNotes.push(`${result.flaggedForLength} flagged for length`);
+    if (result.flaggedAsDuplicate) flagNotes.push(`${result.flaggedAsDuplicate} flagged as duplicate`);
+    const flagSuffix = flagNotes.length > 0 ? ` (${flagNotes.join(", ")})` : "";
+    process.stdout.write(`run ${result.runId}: ${result.postsCreated} posts created${flagSuffix}\n`);
   });
 
 program
@@ -146,10 +131,17 @@ program
 
 program
   .command("regenerate")
-  .argument("<post_id>")
-  .description("Re-run one slot; the old row becomes status=regenerated  [M9]")
-  .action(() => {
-    notYet("regenerate", "M9");
+  .argument("<post_id>", "a flagged (or any generated) post to replace")
+  .description("Re-run one slot; the old row becomes status=regenerated")
+  .action(async (postId: string) => {
+    const [{ getModel }, { regeneratePost }] = await Promise.all([
+      import("./models/factory.js"),
+      import("./pipeline/regenerate.js"),
+    ]);
+    const result = await regeneratePost(postId, getModel());
+    process.stdout.write(
+      `replaced ${result.oldPostId}\n   new post ${result.newPostId} (${result.status})\n`,
+    );
   });
 
 program

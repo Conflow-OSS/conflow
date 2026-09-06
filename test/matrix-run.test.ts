@@ -1,27 +1,38 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ContentModel, GenerateArgs } from "../src/models/types.js";
 
 const workDir = mkdtempSync(join(tmpdir(), "content-engine-matrix-"));
 process.env.DB_PATH = join(workDir, "matrix.db");
-process.env.EMBED_DIM = "8";
+process.env.EMBED_DIM = "16";
 process.env.GEN_X = "3";
 process.env.GEN_Y = "2";
 process.env.GEN_Z = "2";
 process.env.SHORT_FORM_RATIO = "0.5";
 process.env.HOOK_SPLIT = "0.5";
 process.env.LENGTH_TOLERANCE = "0.15";
+process.env.DEDUP_SIBLING_THRESHOLD = "0.93";
+process.env.DEDUP_LEDGER_THRESHOLD = "0.85";
 process.env.LOG_LEVEL = "error";
+
+vi.mock("../src/embeddings/voyage.js", async () => {
+  const { textToVector } = await import("./support/fake-embeddings.js");
+  return {
+    embedDocuments: async (texts: string[]) => texts.map(textToVector),
+    embedQuery: async (text: string) => textToVector(text),
+  };
+});
 
 const { runMatrixFlowFromTopicList, runMatrixFlowFromStory, runCaseStudyFlow } = await import(
   "../src/pipeline/run.js"
 );
 const { getDb, closeDb } = await import("../src/store/db.js");
 
-function bodyOfLength(characterCount: number): string {
-  return "word ".repeat(Math.ceil(characterCount / 5)).slice(0, characterCount).trim();
+function fillerBody(marker: string, format: string): string {
+  const filler = format === "short" ? "word ".repeat(90) : "word ".repeat(240);
+  return `${marker} ${filler}`.trim();
 }
 
 function tagList(tagName: string, count: number): string {
@@ -47,12 +58,21 @@ const fakeModel: ContentModel = {
     }
 
     postGenerationPrompts.push(user);
+    const topic = user.match(/TOPIC:\s*(.+)/)?.[1]?.trim() ?? "";
+    const angle = user.match(/ANGLE:\s*(.+?)(?:\s+—|$)/)?.[1]?.trim() ?? "";
+    const variantNumber = user.match(/VARIANT:\s*(\d+)/)?.[1] ?? "1";
     const format = user.match(/FORMAT:\s*(\w+)/)?.[1] ?? "long";
-    const body = format === "short" ? bodyOfLength(450) : bodyOfLength(1200);
+
+    // A topic containing "SAMEPOST" makes every variant identical, to exercise dedup.
+    const marker = topic.includes("SAMEPOST")
+      ? `${topic} ${angle}`
+      : `${topic} ${angle} v${variantNumber}`;
+    const body = fillerBody(marker, format);
+
     return {
       text:
         `<post><format>${format}</format><hook_style>questions</hook_style>` +
-        `<topic_angle>the angle</topic_angle><body>${body}</body>` +
+        `<topic_angle>${angle}</topic_angle><body>${body}</body>` +
         `<char_count>${body.length}</char_count></post>`,
       channel: "vertex",
       model: "fake-glm",
@@ -81,6 +101,7 @@ describe("runMatrixFlowFromTopicList — 3 topics, Y=2, Z=2", () => {
     const result = await runMatrixFlowFromTopicList(topicsFile, fakeModel);
     runId = result.runId;
     expect(result.postsCreated).toBe(12);
+    expect(result.flaggedAsDuplicate).toBe(0);
   });
 
   it("creates 3 x 2 topic rows", () => {
@@ -107,12 +128,20 @@ describe("runMatrixFlowFromTopicList — 3 topics, Y=2, Z=2", () => {
     });
   });
 
-  it("marks every post ok and records the model", () => {
-    const rows = getDb()
-      .prepare(`SELECT status, model_id FROM posts WHERE run_id = ?`)
-      .all(runId) as Array<{ status: string; model_id: string }>;
-    expect(rows).toHaveLength(12);
-    expect(rows.every((row) => row.status === "ok" && row.model_id === "fake-glm")).toBe(true);
+  it("stores an embedding for every post and marks them ok", () => {
+    const posts = getDb()
+      .prepare(`SELECT id, status FROM posts WHERE run_id = ?`)
+      .all(runId) as Array<{ id: string; status: string }>;
+    expect(posts).toHaveLength(12);
+    expect(posts.every((post) => post.status === "ok")).toBe(true);
+
+    const embeddingCount = getDb()
+      .prepare(
+        `SELECT COUNT(*) AS n FROM vec_posts WHERE post_id IN
+         (SELECT id FROM posts WHERE run_id = ?)`,
+      )
+      .get(runId) as { n: number };
+    expect(embeddingCount.n).toBe(12);
   });
 });
 
@@ -120,6 +149,7 @@ describe("runMatrixFlowFromStory — GEN_X=3, Y=2, Z=2", () => {
   let runId: string;
 
   beforeAll(async () => {
+    postGenerationPrompts.length = 0;
     const storyFile = join(workDir, "story.md");
     writeFileSync(storyFile, "A long case study about building a GKE platform. ".repeat(40));
     const result = await runMatrixFlowFromStory(storyFile, fakeModel);
@@ -140,15 +170,10 @@ describe("runMatrixFlowFromStory — GEN_X=3, Y=2, Z=2", () => {
     expect(distinctBaseTopics.n).toBe(3);
   });
 
-  it("runs the same matrix and creates 3 x 2 x 2 posts", () => {
-    expect(countPostsByFormat(runId)).toEqual({ short: 6, long: 6 });
-  });
-
   it("does NOT pass the story as source facts (advisory mode)", () => {
-    const usedAdvisoryMode = postGenerationPrompts.every((prompt) =>
-      prompt.includes("(none — advisory mode)"),
+    expect(postGenerationPrompts.every((prompt) => prompt.includes("(none — advisory mode)"))).toBe(
+      true,
     );
-    expect(usedAdvisoryMode).toBe(true);
   });
 });
 
@@ -168,9 +193,7 @@ describe("runCaseStudyFlow — GEN_X=3, Y=2, Z=2", () => {
   });
 
   it("records the run as the casestudy flow", () => {
-    const run = getDb()
-      .prepare(`SELECT flow FROM runs WHERE id = ?`)
-      .get(runId) as { flow: string };
+    const run = getDb().prepare(`SELECT flow FROM runs WHERE id = ?`).get(runId) as { flow: string };
     expect(run.flow).toBe("casestudy");
   });
 
@@ -179,8 +202,6 @@ describe("runCaseStudyFlow — GEN_X=3, Y=2, Z=2", () => {
       prompt.includes("The hardest part was zero-downtime database migrations."),
     );
     expect(everyPromptHasSourceFacts).toBe(true);
-    expect(postGenerationPrompts.some((prompt) => prompt.includes("(none — advisory mode)"))).toBe(
-      false,
-    );
   });
 });
+

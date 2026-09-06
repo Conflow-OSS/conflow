@@ -26,3 +26,7 @@ export function listTopicsByRun(runId: string): TopicRow[] {
     .prepare(`SELECT * FROM topics WHERE run_id = ? ORDER BY base_index, angle_index`)
     .all(runId) as TopicRow[];
 }
+
+export function getTopic(id: string): TopicRow | undefined {
+  return getDb().prepare(`SELECT * FROM topics WHERE id = ?`).get(id) as TopicRow | undefined;
+}

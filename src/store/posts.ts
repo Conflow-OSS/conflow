@@ -121,6 +121,18 @@ export function dedupLedger(opts: { excludeTopicId?: string | null } = {}): Post
     .all({ excl: opts.excludeTopicId ?? null }) as PostRow[];
 }
 
+/** The still-standing generated variants for one angle-topic — used as dedup siblings. */
+export function standingVariantsOfTopic(topicId: string, excludePostId?: string): PostRow[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM posts
+        WHERE topic_id = @topicId AND kind = 'generated' AND status = 'ok'
+          AND (@excludePostId IS NULL OR id != @excludePostId)
+        ORDER BY created_at`,
+    )
+    .all({ topicId, excludePostId: excludePostId ?? null }) as PostRow[];
+}
+
 export function countByStatus(runId: string): Record<string, number> {
   const rows = getDb()
     .prepare(`SELECT status, COUNT(*) AS n FROM posts WHERE run_id = ? GROUP BY status`)

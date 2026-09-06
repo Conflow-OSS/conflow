@@ -18,7 +18,7 @@ Full plan and the generation prompt:
 | M6 | Matrix flow — topic-list input | ✅ |
 | M7 | Matrix flow — story → topics | ✅ |
 | M8 | Case-study flow | ✅ |
-| M9 | Dedup + flags | ⏳ |
+| M9 | Dedup + flags + regenerate | ✅ |
 | M10 | Export + hardening | ⏳ |
 
 ## Quickstart
@@ -43,7 +43,7 @@ content generate --flow matrix --story-file f     matrix flow from a story
 content generate --flow casestudy --story-file f  case-study flow (grounded in your own project)
 content show [run_id]                             print every post from a run
 content flags [--run <id>]                        list flagged posts
-content regenerate <post_id>                      re-run one slot                 [M9]
+content regenerate <post_id>                      re-run one slot (old row -> regenerated)
 content export <run_id> [--format md|json]        write a run to disk             [M10]
 content stats                                     quick overview
 ```
