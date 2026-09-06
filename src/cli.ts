@@ -41,9 +41,31 @@ program
   .requiredOption("--flow <flow>", "matrix | casestudy")
   .option("--topics-file <path>", "newline-separated topics (matrix)")
   .option("--story-file <path>", "a long story / case study")
-  .description("Run a generation flow  [M6–M8]")
-  .action(() => {
-    notYet("generate", "M6");
+  .description("Run a generation flow")
+  .action(async (opts: { flow: string; topicsFile?: string; storyFile?: string }) => {
+    if (opts.flow === "matrix" && opts.topicsFile) {
+      const [{ getModel }, { runMatrixFlowFromTopicList }] = await Promise.all([
+        import("./models/factory.js"),
+        import("./pipeline/run.js"),
+      ]);
+      const result = await runMatrixFlowFromTopicList(opts.topicsFile, getModel());
+      process.stdout.write(
+        `run ${result.runId}: ${result.postsCreated} posts created` +
+          (result.flaggedForLength ? `, ${result.flaggedForLength} flagged for length` : "") +
+          "\n",
+      );
+      return;
+    }
+    if (opts.flow === "matrix" && opts.storyFile) {
+      notYet("generate --flow matrix --story-file", "M7");
+      return;
+    }
+    if (opts.flow === "casestudy") {
+      notYet("generate --flow casestudy", "M8");
+      return;
+    }
+    logger.error("give --flow matrix with --topics-file", { flow: opts.flow });
+    process.exitCode = 2;
   });
 
 program
