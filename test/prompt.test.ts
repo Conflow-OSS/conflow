@@ -23,7 +23,7 @@ describe("assemblePrompt — system prompt", () => {
 
     expect(system).toContain("Oya, walk with me"); // from the observability golden
     expect(system).toContain("𝗖𝗧𝗢𝘀 𝗮𝗻𝗱 𝗦𝗶𝘁𝗲 𝗥𝗲𝗹𝗶𝗮𝗯𝗶𝗹𝗶𝘁𝘆 𝗘𝗻𝗴𝗶𝗻𝗲𝗲𝗿𝘀"); // from the SLO golden
-    expect(system).toContain("right-sizing Pod containers"); // from the short golden
+    expect(system).toContain("Limit Ranges in namespaces"); // from the short golden
   });
 });
 

@@ -104,30 +104,29 @@ FORMAT: SHORT    (target 300–600 characters)
 ==============================================
 ONE plain, understated thought — like a quick note typed out between tasks, not a crafted
 micro-post. NO --- dividers. NO bullets. NO "who I am" sign-off. NO call to action. NO
-takeaway line. HOOK_STYLE is ignored. Read the SHORT canonical example below and match its
-register exactly: mild, a little rambling, no punchlines, no selling.
+takeaway line. HOOK_STYLE is ignored. The SHORT canonical example below is the reference
+for register: mild, a little rambling, no punchlines, no selling.
 
-  Line 1: a low-key observation — the thing gets underrated / overlooked / ignored until it
-    causes a problem. Understated, NOT a punchy hot-take, NOT a vivid marketing consequence.
-    Often opens "Honestly,". Real example (match this energy):
-      "Honestly, right-sizing Pod containers often gets underrated and overlooked until it
-       comes to bite one in the neck, especially when it leads to node contention and
-       CPU-throttling at 3am"
-
-  blank line
-
-  1–2 short paragraphs, plain and matter-of-fact: why it's easy to ignore, who trips on it,
-    the nuance. No metaphors. No "the trick is…". No clever turns of phrase. Real example:
-      "It might seem like a very simple concept, but it often gets ignored, especially with
-       open source workloads."
+  Line 1 — state the observation directly, starting on the actual subject. Do NOT open with
+    a filler lead-in: no "Honestly,", "Real talk,", "Look,", "Here's the thing,", "Funny
+    how", "Let's be real". Just start with the thing itself. The observation is usually that
+    the topic gets underrated / overlooked / left alone until it causes a problem — said
+    plainly, not as a punchy hot-take, not a vivid marketing consequence.
 
   blank line
 
-  Closing line: a soft, almost throwaway thought — NOT advice, NOT "worth doing X today",
-    NOT a wrap-up. Just "learning about X would be great" / "would be nice to read up on X"
-    / one more mild observation, phrased loosely and left hanging. Real example:
-      "Learning about Limit Ranges in namespaces, assigning default resource configs to
-       containers would be great"
+  1–2 short paragraphs — plain and matter-of-fact: why it is easy to ignore, who trips on
+    it, the nuance. No metaphors, no "the trick is…", no clever turns of phrase.
+
+  blank line
+
+  Closing line — a soft, almost throwaway thought. NOT advice, NOT "worth doing X today",
+    NOT a wrap-up, NOT a call to action. A loose "would be good to look into X", or just one
+    more plain observation left hanging. Low-key.
+
+Bold unicode: 0, occasionally 1 phrase. Emojis: 0, occasionally 1. Read slightly flat and
+unpolished on purpose. Several short posts are reviewed together — vary the sentence shapes
+so they do not all read from the same template.
 
   blank line
 
