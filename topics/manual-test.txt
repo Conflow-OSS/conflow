@@ -1,0 +1,8 @@
+# Manual pipeline test — 4 topics.
+# generate --flow matrix --topics-file topics/manual-test.txt
+#   -> each topic becomes GEN_Y angles, each angle becomes GEN_Z lessons -> 1 post per lesson
+
+Multi-zone Kubernetes clusters for surviving a zone outage
+Tracking SLO error-budget burn rate and alerting on it
+Least-privilege IAM for CI/CD pipelines on Google Cloud
+Autoscaling worker nodes to match real traffic instead of over-provisioning
