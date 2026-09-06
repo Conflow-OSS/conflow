@@ -10,8 +10,8 @@ export interface ParsedPost {
 
 export function parsePostXml(modelResponse: string): ParsedPost {
   const body = extractTagContent(modelResponse, "body");
-  if (body === null) {
-    throw new Error("model response has no <body> tag");
+  if (body === null || body.length === 0) {
+    throw new Error("model response has no usable <body>");
   }
 
   return {
@@ -26,7 +26,7 @@ export function parsePostXml(modelResponse: string): ParsedPost {
 }
 
 export function parseTagList(modelResponse: string, tagName: string): string[] {
-  const itemPattern = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, "gi");
+  const itemPattern = new RegExp(`<${tagName}(?:\\s[^>]*)?>([\\s\\S]*?)</${tagName}>`, "gi");
   const items: string[] = [];
   for (const match of modelResponse.matchAll(itemPattern)) {
     const item = match[1]!.trim();
@@ -37,8 +37,9 @@ export function parseTagList(modelResponse: string, tagName: string): string[] {
   return items;
 }
 
+/** First `<tag>…</tag>` in the text, tolerating attributes and case. */
 function extractTagContent(text: string, tagName: string): string | null {
-  const tagPattern = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, "i");
+  const tagPattern = new RegExp(`<${tagName}(?:\\s[^>]*)?>([\\s\\S]*?)</${tagName}>`, "i");
   const match = text.match(tagPattern);
   return match ? match[1]!.trim() : null;
 }

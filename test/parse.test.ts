@@ -49,7 +49,7 @@ describe("parsePostXml", () => {
   });
 
   it("throws when there is no body tag", () => {
-    expect(() => parsePostXml("<post><format>long</format></post>")).toThrow(/no <body> tag/);
+    expect(() => parsePostXml("<post><format>long</format></post>")).toThrow(/no usable <body>/);
   });
 });
 

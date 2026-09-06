@@ -154,9 +154,14 @@ program
   .command("export")
   .argument("<run_id>")
   .option("--format <fmt>", "md | json", "md")
-  .description("Write a run to the export directory  [M10]")
-  .action(() => {
-    notYet("export", "M10");
+  .description("Write a run's posts to the export directory")
+  .action(async (runId: string, opts: { format: string }) => {
+    const format = opts.format === "json" ? "json" : "md";
+    const { exportRun } = await import("./export/index.js");
+    const result = exportRun(runId, format);
+    process.stdout.write(
+      `exported ${result.files.length} file(s) to ${result.outDir}\n`,
+    );
   });
 
 program
