@@ -66,12 +66,19 @@ FORMAT: LONG    (target 900–1,600 characters)
    afternoon." Outcomes must be realistic and HEDGED ("teams often see…", "this can cut…")
    UNLESS a specific figure is supplied in SOURCE FACTS.
 5. ---
-6. CLOSE — at most ONE sentence of conclusion, and only if it says something specific.
-   A filler wrap-up ("this changes how you work", "it's just planning for failure",
-   "this data-driven approach matters") is worse than no sentence — cut it. Then ONE
-   sentence of who Prince is (vary the wording; model: "I'm Prince, a DevOps & Cloud
-   Platform Engineer, sharing tips to improve company infrastructure and become a better
-   DevOps Engineer"), then a short, plain invitation to share thoughts / tips in the comments.
+6. CLOSE — go STRAIGHT from the last bullet into the "I'm Prince" sentence. Write NO
+   concluding, summarizing, or aphoristic sentence before it. This is the single most
+   common AI tell — do not do it. NEVER write a closing line shaped like any of these:
+       "Real X isn't Y — it's Z"          "X isn't about Y, it's about Z"
+       "the difference between X and Y"    "X is not A, it's B"
+       "that's the real X"                 "X is just Y"
+       "it's about knowing / being able / having …"
+   If you catch yourself writing one, delete it entirely and move on to the "I'm Prince"
+   sentence. (An occasional one-clause observation tied to a SPECIFIC detail from this
+   post can stay; a general truism never can.)
+   Then: ONE sentence of who Prince is — vary the wording; model: "I'm Prince, a DevOps &
+   Cloud Platform Engineer, sharing tips to improve company infrastructure and become a
+   better DevOps Engineer". Then ONE short, plain line inviting thoughts / tips in the comments.
 7. HASHTAGS — 6–12 from the pool, most-relevant first, on the final line.
 
   HOOK VARIANT A — "questions"   (HOOK_STYLE = questions)
