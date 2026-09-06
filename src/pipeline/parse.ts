@@ -24,16 +24,16 @@ export function parsePostXml(modelResponse: string): ParsedPost {
   };
 }
 
-export function parseAngleList(modelResponse: string): string[] {
-  const angleMatches = modelResponse.matchAll(/<angle>([\s\S]*?)<\/angle>/gi);
-  const angles: string[] = [];
-  for (const match of angleMatches) {
-    const angle = match[1]!.trim();
-    if (angle.length > 0) {
-      angles.push(angle);
+export function parseTagList(modelResponse: string, tagName: string): string[] {
+  const itemPattern = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, "gi");
+  const items: string[] = [];
+  for (const match of modelResponse.matchAll(itemPattern)) {
+    const item = match[1]!.trim();
+    if (item.length > 0) {
+      items.push(item);
     }
   }
-  return angles;
+  return items;
 }
 
 function extractTagContent(text: string, tagName: string): string | null {

@@ -1,0 +1,10 @@
+# One topic per line. Blank lines and lines starting with # are ignored.
+# Copy this to topics/mine.txt, edit, then run:
+#   npm run dev -- generate --flow matrix --topics-file topics/mine.txt
+
+Right-sizing pod requests and limits on Kubernetes
+Setting SLOs and error budgets for customer-facing services
+Zero-downtime database schema migrations
+Centralised logging with Loki on object storage
+Scanning container images for CVEs in the CI pipeline
+Private access to internal services with a mesh VPN
