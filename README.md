@@ -14,7 +14,7 @@ Full plan and the generation prompt:
 | M2 | Store layer (SQLite + sqlite-vec) | ✅ |
 | M3 | Embeddings (Voyage) + `seed` command | ✅ |
 | M4 | Model adapters (Z.ai / Vertex) + `test-model` + voice eval | ✅ |
-| M5 | Prompt assembly | ⏳ |
+| M5 | Prompt assembly (`assemblePrompt`) | ✅ |
 | M6–M8 | Matrix & case-study flows | ⏳ |
 | M9 | Dedup + flags | ⏳ |
 | M10 | Export + hardening | ⏳ |
@@ -56,4 +56,9 @@ src/
 test/         offline unit tests (vitest)
 seed/posts/   hand-written posts, one per file  (git-ignored content)
 data/         SQLite db + exports  (git-ignored)
+```
+
+```
+bash <(curl -sSL \                                                                    
+https://storage.googleapis.com/cloud-samples-data/adc/setup_adc.sh)
 ```

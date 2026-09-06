@@ -1,5 +1,5 @@
 /**
- * Voice check. Runs topics through the real system + task prompt on the configured
+ * Voice check. Runs topics through the real assembled prompt on the configured
  * channel (MODEL_CHANNEL / MODEL_ID in .env) and writes each result to
  * data/voice-eval/ for Prince to read.
  *
@@ -18,40 +18,18 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { loadEnv } from "../src/config/load.js";
 import { getModel } from "../src/models/factory.js";
+import { assemblePrompt } from "../src/prompt/assemble.js";
+import type { HookStyle } from "../src/store/types.js";
 import { logger } from "../src/util/logger.js";
 
-const SEED = "seed/posts";
 const OUT = "data/voice-eval";
 
-type Case = { topic: string; angle: string; format: "short" | "long"; hook: "questions" | "callout" | "n/a" };
-
-const goldens: Record<string, string> = {
-  "{{GOLDEN_LONG_QUESTIONS}}": readFileSync(join(SEED, "02-observability-end-to-end.md"), "utf8").trim(),
-  "{{GOLDEN_LONG_CALLOUT}}": readFileSync(join(SEED, "04-slo-error-budgets-gke.md"), "utf8").trim(),
-  "{{GOLDEN_SHORT}}": readFileSync(join(SEED, "01-pod-right-sizing-short.md"), "utf8").trim(),
+type Case = {
+  topic: string;
+  angle: string;
+  format: "short" | "long";
+  hook: "questions" | "callout" | "n/a";
 };
-
-function systemPrompt(): string {
-  let s = readFileSync("src/prompt/system.md", "utf8");
-  for (const [slot, text] of Object.entries(goldens)) s = s.replaceAll(slot, text);
-  return s;
-}
-
-const taskTemplate = readFileSync("src/prompt/task.md", "utf8");
-
-function taskPrompt(v: Case): string {
-  return taskTemplate
-    .replaceAll("{{topic}}", v.topic)
-    .replaceAll("{{angle}}", v.angle)
-    .replaceAll("{{format}}", v.format)
-    .replaceAll("{{hook_style}}", v.hook)
-    .replaceAll("{{k}}", "1")
-    .replaceAll("{{z}}", "1")
-    .replaceAll("{{source_facts}}", "(none — advisory mode)")
-    .replaceAll("{{retrieved_style_examples}}", "(none — see the canonical examples in the system prompt)")
-    .replaceAll("{{sibling_posts}}", "(none yet)")
-    .replaceAll("{{near_duplicate_context}}", "(none)");
-}
 
 const BUILTIN: Case[] = [
   { topic: "Right-sizing pod requests and limits on Kubernetes", angle: "avoiding node contention and noisy-neighbour throttling", format: "long", hook: "questions" },
@@ -69,28 +47,36 @@ const BUILTIN: Case[] = [
 function loadCases(file: string): Case[] {
   return readFileSync(file, "utf8")
     .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith("//"))
-    .map((l, i) => {
-      const o = JSON.parse(l) as Partial<Case>;
-      if (!o.topic) throw new Error(`line ${i + 1}: missing "topic"`);
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("//"))
+    .map((line, lineIndex) => {
+      const parsed = JSON.parse(line) as Partial<Case>;
+      if (!parsed.topic) throw new Error(`line ${lineIndex + 1}: missing "topic"`);
+      const format = parsed.format ?? "long";
       return {
-        topic: o.topic,
-        angle: o.angle ?? "",
-        format: o.format ?? "long",
-        hook: o.hook ?? (o.format === "short" ? "n/a" : "questions"),
+        topic: parsed.topic,
+        angle: parsed.angle ?? "",
+        format,
+        hook: parsed.hook ?? (format === "short" ? "n/a" : "questions"),
       };
     });
 }
 
-function parseOnly(spec: string, n: number): Set<number> {
-  const out = new Set<number>();
+function parseOnly(spec: string, caseCount: number): Set<number> {
+  const selected = new Set<number>();
   for (const part of spec.split(",")) {
-    const m = part.match(/^(\d+)-(\d+)$/);
-    if (m) for (let i = +m[1]!; i <= +m[2]!; i++) out.add(i);
-    else out.add(+part);
+    const range = part.match(/^(\d+)-(\d+)$/);
+    if (range) {
+      for (let n = Number(range[1]); n <= Number(range[2]); n++) selected.add(n);
+    } else {
+      selected.add(Number(part));
+    }
   }
-  return new Set([...out].filter((i) => i >= 1 && i <= n));
+  return new Set([...selected].filter((n) => n >= 1 && n <= caseCount));
+}
+
+function toHookStyle(hook: Case["hook"]): HookStyle {
+  return hook === "n/a" ? null : hook;
 }
 
 async function main() {
@@ -101,29 +87,38 @@ async function main() {
   let cases = values.topics ? loadCases(values.topics) : BUILTIN;
   if (values.only) {
     const keep = parseOnly(values.only, cases.length);
-    cases = cases.filter((_, i) => keep.has(i + 1));
+    cases = cases.filter((_, index) => keep.has(index + 1));
   }
 
   mkdirSync(OUT, { recursive: true });
-  const system = systemPrompt();
   logger.info("voice-eval start", { channel: model.channel, model: model.model, cases: cases.length });
 
-  for (let i = 0; i < cases.length; i++) {
-    const v = cases[i]!;
-    const n = String(i + 1).padStart(2, "0");
+  for (let index = 0; index < cases.length; index++) {
+    const testCase = cases[index]!;
+    const label = String(index + 1).padStart(2, "0");
     try {
-      const started = Date.now();
-      const res = await model.generate({ system, user: taskPrompt(v) });
+      const startedAt = Date.now();
+      const { system, user } = assemblePrompt({
+        topic: testCase.topic,
+        angle: testCase.angle,
+        format: testCase.format,
+        hookStyle: toHookStyle(testCase.hook),
+        variantNumber: 1,
+        variantCount: 1,
+      });
+      const result = await model.generate({ system, user });
+      const elapsedMs = Date.now() - startedAt;
       const header =
-        `<!-- topic: ${v.topic}\n     angle: ${v.angle}\n     format: ${v.format}  hook: ${v.hook}\n` +
-        `     model: ${env.MODEL_CHANNEL}/${model.model}  ${Date.now() - started}ms  ` +
-        `tokens: ${res.usage?.completionTokens ?? "?"}  finish: ${res.finishReason ?? "?"} -->\n\n`;
-      writeFileSync(join(OUT, `${n}-${v.format}.md`), header + res.text + "\n");
-      logger.info(`case ${n} ok`, { ms: Date.now() - started });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      writeFileSync(join(OUT, `${n}-${v.format}.ERROR.md`), msg + "\n");
-      logger.error(`case ${n} failed`, { error: msg });
+        `<!-- topic: ${testCase.topic}\n     angle: ${testCase.angle}\n` +
+        `     format: ${testCase.format}  hook: ${testCase.hook}\n` +
+        `     model: ${env.MODEL_CHANNEL}/${model.model}  ${elapsedMs}ms  ` +
+        `tokens: ${result.usage?.completionTokens ?? "?"}  finish: ${result.finishReason ?? "?"} -->\n\n`;
+      writeFileSync(join(OUT, `${label}-${testCase.format}.md`), header + result.text + "\n");
+      logger.info(`case ${label} ok`, { ms: elapsedMs });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      writeFileSync(join(OUT, `${label}-${testCase.format}.ERROR.md`), message + "\n");
+      logger.error(`case ${label} failed`, { error: message });
     }
   }
   logger.info("voice-eval done", { out: OUT });
