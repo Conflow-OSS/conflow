@@ -41,6 +41,7 @@ content test-model [--prompt <t>] [--system <f>]  one call to the configured cha
 content generate --flow matrix --topics-file f    matrix flow from a topic list
 content generate --flow matrix --story-file f     matrix flow from a story        [M7]
 content generate --flow casestudy --story-file f  case-study flow                 [M8]
+content show [run_id]                             print every post from a run
 content flags [--run <id>]                        list flagged posts
 content regenerate <post_id>                      re-run one slot                 [M9]
 content export <run_id> [--format md|json]        write a run to disk             [M10]

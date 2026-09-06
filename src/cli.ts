@@ -3,8 +3,9 @@ import { Command } from "commander";
 import { loadEnv } from "./config/load.js";
 import { closeDb } from "./store/db.js";
 import { migrate } from "./store/migrate.js";
-import { countByStatus, listFlagged } from "./store/posts.js";
-import { latestRun } from "./store/runs.js";
+import { countByStatus, listByRun, listFlagged } from "./store/posts.js";
+import { getRun, latestRun } from "./store/runs.js";
+import { listTopicsByRun } from "./store/topics.js";
 import { countEmbeddings } from "./store/vec.js";
 import { logger } from "./util/logger.js";
 
@@ -86,6 +87,40 @@ program
           `    ${r.body.slice(0, 100).replace(/\s+/g, " ")}…\n`,
       );
     }
+  });
+
+program
+  .command("show")
+  .argument("[run_id]", "which run to show (default: the most recent)")
+  .description("Print every post from a run")
+  .action((runId?: string) => {
+    migrate();
+    const run = runId ? getRun(runId) : latestRun();
+    if (!run) {
+      logger.error(runId ? `no run with id ${runId}` : "no runs yet");
+      process.exitCode = 1;
+      return;
+    }
+
+    const posts = listByRun(run.id);
+    const topicById = new Map(listTopicsByRun(run.id).map((topic) => [topic.id, topic]));
+
+    process.stdout.write(
+      `run ${run.id} · ${run.flow} · ${run.created_at.slice(0, 10)} · ${posts.length} posts\n`,
+    );
+
+    posts.forEach((post, index) => {
+      const topic = post.topic_id ? topicById.get(post.topic_id) : undefined;
+      const hookStyleSuffix = post.hook_style ? `/${post.hook_style}` : "";
+      process.stdout.write(
+        `\n━━━ ${index + 1}/${posts.length} · ${post.format}${hookStyleSuffix} · ` +
+          `${post.status} · ${post.char_count} chars ━━━\n`,
+      );
+      if (topic) {
+        process.stdout.write(`topic:  ${topic.base_text}\nangle:  ${topic.angle_text}\n`);
+      }
+      process.stdout.write(`\n${post.body}\n`);
+    });
   });
 
 program
