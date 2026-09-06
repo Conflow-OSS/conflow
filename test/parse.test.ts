@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAngleList, parsePostXml } from "../src/pipeline/parse.js";
+import { parsePostXml, parseTagList } from "../src/pipeline/parse.js";
 
 const CLEAN_POST = `<post>
   <format>long</format>
@@ -41,19 +41,27 @@ describe("parsePostXml", () => {
   });
 });
 
-describe("parseAngleList", () => {
+describe("parseTagList", () => {
   it("collects every angle and trims whitespace", () => {
     const response = `<angles>
       <angle>cutting mean-time-to-detect during an incident</angle>
       <angle>  giving new engineers a safe way to debug  </angle>
     </angles>`;
-    expect(parseAngleList(response)).toEqual([
+    expect(parseTagList(response, "angle")).toEqual([
       "cutting mean-time-to-detect during an incident",
       "giving new engineers a safe way to debug",
     ]);
   });
 
-  it("returns an empty list when there are no angle tags", () => {
-    expect(parseAngleList("no xml here")).toEqual([]);
+  it("collects topic tags the same way", () => {
+    const response = "<topics><topic>simulated a DDoS attack</topic><topic>added quality gates</topic></topics>";
+    expect(parseTagList(response, "topic")).toEqual([
+      "simulated a DDoS attack",
+      "added quality gates",
+    ]);
+  });
+
+  it("returns an empty list when the tag is absent", () => {
+    expect(parseTagList("no xml here", "angle")).toEqual([]);
   });
 });

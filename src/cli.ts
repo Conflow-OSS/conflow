@@ -58,14 +58,23 @@ program
       return;
     }
     if (opts.flow === "matrix" && opts.storyFile) {
-      notYet("generate --flow matrix --story-file", "M7");
+      const [{ getModel }, { runMatrixFlowFromStory }] = await Promise.all([
+        import("./models/factory.js"),
+        import("./pipeline/run.js"),
+      ]);
+      const result = await runMatrixFlowFromStory(opts.storyFile, getModel());
+      process.stdout.write(
+        `run ${result.runId}: ${result.postsCreated} posts created` +
+          (result.flaggedForLength ? `, ${result.flaggedForLength} flagged for length` : "") +
+          "\n",
+      );
       return;
     }
     if (opts.flow === "casestudy") {
       notYet("generate --flow casestudy", "M8");
       return;
     }
-    logger.error("give --flow matrix with --topics-file", { flow: opts.flow });
+    logger.error("use --flow matrix with either --topics-file or --story-file", { flow: opts.flow });
     process.exitCode = 2;
   });
 

@@ -1,11 +1,13 @@
+import { readFileSync } from "node:fs";
 import { loadEnv } from "../config/load.js";
 import type { ContentModel } from "../models/types.js";
 import { migrate } from "../store/migrate.js";
 import { insertPost } from "../store/posts.js";
 import { insertRun } from "../store/runs.js";
 import { insertTopic } from "../store/topics.js";
+import type { InputKind } from "../store/types.js";
 import { logger } from "../util/logger.js";
-import { expandTopicIntoAngles } from "./expand.js";
+import { expandStoryIntoTopics, expandTopicIntoAngles } from "./expand.js";
 import { generateOneVariant } from "./generate.js";
 import { loadTopicList } from "./inputs.js";
 import { planPostSlots } from "./plan.js";
@@ -16,19 +18,51 @@ export interface MatrixRunResult {
   flaggedForLength: number;
 }
 
-/**
- * Matrix flow, topic-list input:
- * for each topic -> expand into GEN_Y angles -> generate GEN_Z posts per angle.
- * No deduplication yet (that arrives in M9).
- */
 export async function runMatrixFlowFromTopicList(
   topicListPath: string,
   model: ContentModel,
 ): Promise<MatrixRunResult> {
   migrate();
+  const baseTopics = loadTopicList(topicListPath);
+  return runMatrix({
+    baseTopics,
+    inputKind: "topic_list",
+    inputText: baseTopics.join("\n"),
+    model,
+  });
+}
+
+export async function runMatrixFlowFromStory(
+  storyPath: string,
+  model: ContentModel,
+): Promise<MatrixRunResult> {
+  migrate();
   const env = loadEnv();
 
-  const baseTopics = loadTopicList(topicListPath);
+  const story = readFileSync(storyPath, "utf8").trim();
+  if (story.length === 0) {
+    throw new Error(`story file is empty: ${storyPath}`);
+  }
+
+  const baseTopics = await expandStoryIntoTopics(story, env.GEN_X, model);
+  logger.info("story expanded into topics", { count: baseTopics.length, topics: baseTopics });
+
+  return runMatrix({ baseTopics, inputKind: "story", inputText: story, model });
+}
+
+/**
+ * The shared matrix loop: for each base topic, expand into GEN_Y angles, then
+ * generate GEN_Z posts per angle. Deduplication arrives in M9.
+ */
+async function runMatrix(input: {
+  baseTopics: string[];
+  inputKind: InputKind;
+  inputText: string;
+  model: ContentModel;
+}): Promise<MatrixRunResult> {
+  const env = loadEnv();
+  const { baseTopics, model } = input;
+
   const anglesPerTopic = env.GEN_Y;
   const postsPerAngle = env.GEN_Z;
   const totalPosts = baseTopics.length * anglesPerTopic * postsPerAngle;
@@ -41,8 +75,8 @@ export async function runMatrixFlowFromTopicList(
       postsPerAngle,
       model: model.model,
     },
-    input_kind: "topic_list",
-    input_text: baseTopics.join("\n"),
+    input_kind: input.inputKind,
+    input_text: input.inputText,
   });
 
   logger.info("matrix run start", {
