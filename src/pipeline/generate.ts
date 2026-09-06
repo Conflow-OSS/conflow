@@ -18,6 +18,8 @@ export interface VariantRequest {
   variantNumber: number;
   variantCount: number;
   previousVariantBodies: string[];
+  /** set only for the case-study flow — the model may write from these as real experience */
+  sourceFacts?: string;
 }
 
 export interface GeneratedVariant {
@@ -39,6 +41,7 @@ export async function generateOneVariant(
     variantNumber: request.variantNumber,
     variantCount: request.variantCount,
     siblingPosts: request.previousVariantBodies,
+    sourceFacts: request.sourceFacts,
   });
 
   const response = await model.generate({ system, user });

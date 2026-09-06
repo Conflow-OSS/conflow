@@ -17,7 +17,7 @@ Full plan and the generation prompt:
 | M5 | Prompt assembly (`assemblePrompt`) | ✅ |
 | M6 | Matrix flow — topic-list input | ✅ |
 | M7 | Matrix flow — story → topics | ✅ |
-| M8 | Case-study flow | ⏳ |
+| M8 | Case-study flow | ✅ |
 | M9 | Dedup + flags | ⏳ |
 | M10 | Export + hardening | ⏳ |
 
@@ -40,7 +40,7 @@ content seed <dir>                                embed hand-written posts
 content test-model [--prompt <t>] [--system <f>]  one call to the configured channel
 content generate --flow matrix --topics-file f    matrix flow from a topic list
 content generate --flow matrix --story-file f     matrix flow from a story
-content generate --flow casestudy --story-file f  case-study flow                 [M8]
+content generate --flow casestudy --story-file f  case-study flow (grounded in your own project)
 content show [run_id]                             print every post from a run
 content flags [--run <id>]                        list flagged posts
 content regenerate <post_id>                      re-run one slot                 [M9]

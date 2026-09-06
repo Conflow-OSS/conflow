@@ -15,7 +15,9 @@ process.env.HOOK_SPLIT = "0.5";
 process.env.LENGTH_TOLERANCE = "0.15";
 process.env.LOG_LEVEL = "error";
 
-const { runMatrixFlowFromTopicList, runMatrixFlowFromStory } = await import("../src/pipeline/run.js");
+const { runMatrixFlowFromTopicList, runMatrixFlowFromStory, runCaseStudyFlow } = await import(
+  "../src/pipeline/run.js"
+);
 const { getDb, closeDb } = await import("../src/store/db.js");
 
 function bodyOfLength(characterCount: number): string {
@@ -30,6 +32,8 @@ function tagList(tagName: string, count: number): string {
   return `<${tagName}s>\n${items}\n</${tagName}s>`;
 }
 
+const postGenerationPrompts: string[] = [];
+
 const fakeModel: ContentModel = {
   channel: "vertex",
   model: "fake-glm",
@@ -42,6 +46,7 @@ const fakeModel: ContentModel = {
       return { text: tagList("angle", requestedCount), channel: "vertex", model: "fake-glm" };
     }
 
+    postGenerationPrompts.push(user);
     const format = user.match(/FORMAT:\s*(\w+)/)?.[1] ?? "long";
     const body = format === "short" ? bodyOfLength(450) : bodyOfLength(1200);
     return {
@@ -137,5 +142,45 @@ describe("runMatrixFlowFromStory — GEN_X=3, Y=2, Z=2", () => {
 
   it("runs the same matrix and creates 3 x 2 x 2 posts", () => {
     expect(countPostsByFormat(runId)).toEqual({ short: 6, long: 6 });
+  });
+
+  it("does NOT pass the story as source facts (advisory mode)", () => {
+    const usedAdvisoryMode = postGenerationPrompts.every((prompt) =>
+      prompt.includes("(none — advisory mode)"),
+    );
+    expect(usedAdvisoryMode).toBe(true);
+  });
+});
+
+describe("runCaseStudyFlow — GEN_X=3, Y=2, Z=2", () => {
+  let runId: string;
+
+  beforeAll(async () => {
+    postGenerationPrompts.length = 0;
+    const caseStudyFile = join(workDir, "case-study.md");
+    writeFileSync(
+      caseStudyFile,
+      "I built a GKE platform. The hardest part was zero-downtime database migrations. ".repeat(20),
+    );
+    const result = await runCaseStudyFlow(caseStudyFile, fakeModel);
+    runId = result.runId;
+    expect(result.postsCreated).toBe(12);
+  });
+
+  it("records the run as the casestudy flow", () => {
+    const run = getDb()
+      .prepare(`SELECT flow FROM runs WHERE id = ?`)
+      .get(runId) as { flow: string };
+    expect(run.flow).toBe("casestudy");
+  });
+
+  it("passes the case study text as source facts to every post", () => {
+    const everyPromptHasSourceFacts = postGenerationPrompts.every((prompt) =>
+      prompt.includes("The hardest part was zero-downtime database migrations."),
+    );
+    expect(everyPromptHasSourceFacts).toBe(true);
+    expect(postGenerationPrompts.some((prompt) => prompt.includes("(none — advisory mode)"))).toBe(
+      false,
+    );
   });
 });

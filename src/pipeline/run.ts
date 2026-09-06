@@ -5,7 +5,7 @@ import { migrate } from "../store/migrate.js";
 import { insertPost } from "../store/posts.js";
 import { insertRun } from "../store/runs.js";
 import { insertTopic } from "../store/topics.js";
-import type { InputKind } from "../store/types.js";
+import type { Flow, InputKind } from "../store/types.js";
 import { logger } from "../util/logger.js";
 import { expandStoryIntoTopics, expandTopicIntoAngles } from "./expand.js";
 import { generateOneVariant } from "./generate.js";
@@ -25,6 +25,7 @@ export async function runMatrixFlowFromTopicList(
   migrate();
   const baseTopics = loadTopicList(topicListPath);
   return runMatrix({
+    flow: "matrix",
     baseTopics,
     inputKind: "topic_list",
     inputText: baseTopics.join("\n"),
@@ -47,7 +48,37 @@ export async function runMatrixFlowFromStory(
   const baseTopics = await expandStoryIntoTopics(story, env.GEN_X, model);
   logger.info("story expanded into topics", { count: baseTopics.length, topics: baseTopics });
 
-  return runMatrix({ baseTopics, inputKind: "story", inputText: story, model });
+  return runMatrix({ flow: "matrix", baseTopics, inputKind: "story", inputText: story, model });
+}
+
+/**
+ * Case-study flow: like the story flow, but the case study is Prince's own
+ * project, so its full text is passed as source facts and the model writes
+ * grounded, first-person posts instead of general advice.
+ */
+export async function runCaseStudyFlow(
+  caseStudyPath: string,
+  model: ContentModel,
+): Promise<MatrixRunResult> {
+  migrate();
+  const env = loadEnv();
+
+  const caseStudy = readFileSync(caseStudyPath, "utf8").trim();
+  if (caseStudy.length === 0) {
+    throw new Error(`case study file is empty: ${caseStudyPath}`);
+  }
+
+  const baseTopics = await expandStoryIntoTopics(caseStudy, env.GEN_X, model);
+  logger.info("case study expanded into topics", { count: baseTopics.length, topics: baseTopics });
+
+  return runMatrix({
+    flow: "casestudy",
+    baseTopics,
+    inputKind: "story",
+    inputText: caseStudy,
+    sourceFacts: caseStudy,
+    model,
+  });
 }
 
 /**
@@ -55,20 +86,22 @@ export async function runMatrixFlowFromStory(
  * generate GEN_Z posts per angle. Deduplication arrives in M9.
  */
 async function runMatrix(input: {
+  flow: Flow;
   baseTopics: string[];
   inputKind: InputKind;
   inputText: string;
+  sourceFacts?: string;
   model: ContentModel;
 }): Promise<MatrixRunResult> {
   const env = loadEnv();
-  const { baseTopics, model } = input;
+  const { baseTopics, model, sourceFacts } = input;
 
   const anglesPerTopic = env.GEN_Y;
   const postsPerAngle = env.GEN_Z;
   const totalPosts = baseTopics.length * anglesPerTopic * postsPerAngle;
 
   const run = insertRun({
-    flow: "matrix",
+    flow: input.flow,
     config: {
       topics: baseTopics.length,
       anglesPerTopic,
@@ -121,6 +154,7 @@ async function runMatrix(input: {
             variantNumber: variantIndex + 1,
             variantCount: postsPerAngle,
             previousVariantBodies,
+            sourceFacts,
           },
           model,
         );

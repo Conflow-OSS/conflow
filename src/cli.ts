@@ -70,11 +70,23 @@ program
       );
       return;
     }
-    if (opts.flow === "casestudy") {
-      notYet("generate --flow casestudy", "M8");
+    if (opts.flow === "casestudy" && opts.storyFile) {
+      const [{ getModel }, { runCaseStudyFlow }] = await Promise.all([
+        import("./models/factory.js"),
+        import("./pipeline/run.js"),
+      ]);
+      const result = await runCaseStudyFlow(opts.storyFile, getModel());
+      process.stdout.write(
+        `run ${result.runId}: ${result.postsCreated} posts created` +
+          (result.flaggedForLength ? `, ${result.flaggedForLength} flagged for length` : "") +
+          "\n",
+      );
       return;
     }
-    logger.error("use --flow matrix with either --topics-file or --story-file", { flow: opts.flow });
+    logger.error(
+      "expected: --flow matrix (--topics-file | --story-file), or --flow casestudy --story-file",
+      { flow: opts.flow },
+    );
     process.exitCode = 2;
   });
 

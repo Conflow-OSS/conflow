@@ -45,4 +45,27 @@ describe("generateOneVariant", () => {
     expect(variant.status).toBe("flag_length");
     expect(variant.flagReason).toMatch(/below the \d+ minimum/);
   });
+
+  it("passes source facts through to the prompt", async () => {
+    let capturedUserPrompt = "";
+    const capturingModel: ContentModel = {
+      channel: "zai",
+      model: "fake",
+      async generate({ user }) {
+        capturedUserPrompt = user;
+        return {
+          text: `<post><body>${"word ".repeat(240).trim()}</body></post>`,
+          channel: "zai",
+          model: "fake",
+        };
+      },
+    };
+
+    await generateOneVariant(
+      { ...longVariantRequest(), sourceFacts: "I ran the migration with zero downtime using pg_logical." },
+      capturingModel,
+    );
+
+    expect(capturedUserPrompt).toContain("I ran the migration with zero downtime using pg_logical.");
+  });
 });
