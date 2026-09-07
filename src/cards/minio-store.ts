@@ -1,0 +1,54 @@
+import {
+  CreateBucketCommand,
+  HeadBucketCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
+import { loadEnv } from "../config/load.js";
+import { logger } from "../util/logger.js";
+import type { ImageStore, StoredImage } from "./image-store.js";
+
+/** Stores card images in an S3-compatible bucket (MinIO by default). */
+export class MinioImageStore implements ImageStore {
+  private readonly client: S3Client;
+  private readonly bucket: string;
+  private readonly publicUrlBase: string;
+  private bucketChecked = false;
+
+  constructor() {
+    const env = loadEnv();
+    if (!env.S3_ENDPOINT || !env.S3_ACCESS_KEY || !env.S3_SECRET_KEY || !env.S3_PUBLIC_URL_BASE) {
+      throw new Error(
+        "S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY and S3_PUBLIC_URL_BASE are required for card storage",
+      );
+    }
+
+    this.bucket = env.S3_BUCKET;
+    this.publicUrlBase = env.S3_PUBLIC_URL_BASE.replace(/\/+$/, "");
+    this.client = new S3Client({
+      endpoint: env.S3_ENDPOINT,
+      region: env.S3_REGION,
+      forcePathStyle: env.S3_FORCE_PATH_STYLE,
+      credentials: { accessKeyId: env.S3_ACCESS_KEY, secretAccessKey: env.S3_SECRET_KEY },
+    });
+  }
+
+  async put(key: string, body: Buffer, contentType: string): Promise<StoredImage> {
+    await this.ensureBucket();
+    await this.client.send(
+      new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType }),
+    );
+    return { url: `${this.publicUrlBase}/${this.bucket}/${key}`, key };
+  }
+
+  private async ensureBucket(): Promise<void> {
+    if (this.bucketChecked) return;
+    try {
+      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+    } catch {
+      logger.info("creating storage bucket", { bucket: this.bucket });
+      await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
+    }
+    this.bucketChecked = true;
+  }
+}

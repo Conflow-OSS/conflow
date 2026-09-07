@@ -6,7 +6,7 @@ drafts in one voice, guard against repetition, hand the results to a person.
 Full plan and the generation prompt:
 <https://claude.ai/code/artifact/9e69a568-5b35-4206-a21c-8d2b2934a177>
 
-## Status — Phase 1 complete
+## Status
 
 | Milestone | What | State |
 |---|---|---|
@@ -22,6 +22,7 @@ Full plan and the generation prompt:
 | M9.5 | Lesson-driven Z variants + card summary | ✅ |
 | M10 | Export + hardening | ✅ |
 | M10.5 | Modular prompt + regeneration context | ✅ |
+| M11 | Approval gate + Imejis image cards (MinIO) | ✅ |
 
 ## Run book
 
@@ -47,6 +48,17 @@ npm run dev -- generate --flow casestudy --story-file stories/my-project.md
 npm run dev -- show                       # every post from the latest run
 npm run dev -- flags                      # just the flagged ones
 npm run dev -- regenerate <post_id>       # replace a flagged post
+
+# 5. approve (nothing is carded until it's approved)
+npm run dev -- approve <post_id>
+npm run dev -- reject  <post_id>
+npm run dev -- approve-all <run_id>       # bulk-approve every pending ok post
+
+# 6. image cards  (needs IMEJIS_API_KEY + S3/MinIO env)
+npm run dev -- cards <run_id> --limit 10  # render a card per approved post w/o one
+npm run dev -- card  <post_id>            # (re)render one card, e.g. after editing its summary
+
+# 7. export
 npm run dev -- export <run_id>            # -> data/exports/<run_id>/*.md  (+ _summary.md)
 npm run dev -- export <run_id> --format json
 ```
@@ -74,6 +86,10 @@ content generate --flow casestudy --story-file f  case-study flow (grounded in y
 content show [run_id]                             print every post from a run
 content flags [--run <id>]                        list flagged posts
 content regenerate <post_id>                      re-run one slot (old row -> regenerated)
+content approve <post_id> | reject <post_id>      set a post's review state
+content approve-all <run_id> [--include-flagged]  bulk-approve pending posts
+content cards <run_id> [--limit <n>]              render Imejis cards for approved posts
+content card <post_id>                            (re)render one post's card
 content export <run_id> [--format md|json]        write a run to data/exports/<run_id>/
 content stats                                     quick overview
 ```
@@ -88,6 +104,7 @@ src/
   models/     ContentModel interface, zai + vertex adapters, factory
   prompt/     system.md, task-context/generate/regenerate.md, goldens/, assemble.ts
   pipeline/   inputs, expand, plan, generate, parse, dedup, run, regenerate
+  cards/      imejis client, ImageStore interface, MinioImageStore, run
   export/     markdown + json writers
   util/       ids, cosine, logger, retry, http, slug
   cli.ts      command wiring

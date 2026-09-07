@@ -35,6 +35,24 @@ export const EnvSchema = z.object({
   // paths / runtime
   DB_PATH: z.string().min(1).default("./data/content.db"),
   EXPORT_DIR: z.string().min(1).default("./data/exports"),
+
+  // image cards
+  IMEJIS_API_KEY: z.string().min(1).optional(),
+  IMEJIS_DESIGN_ID: z.string().min(1).default("sbOUjiAfOhsl7UfKBtuqU"),
+  CARD_IMAGE_FORMAT: z.enum(["png", "jpeg", "webp"]).default("png"),
+  CARD_BATCH_LIMIT: z.coerce.number().int().positive().default(10),
+
+  // object storage (MinIO / any S3-compatible)
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_REGION: z.string().min(1).default("us-east-1"),
+  S3_BUCKET: z.string().min(1).default("content-cards"),
+  S3_ACCESS_KEY: z.string().min(1).optional(),
+  S3_SECRET_KEY: z.string().min(1).optional(),
+  S3_PUBLIC_URL_BASE: z.string().url().optional(),
+  S3_FORCE_PATH_STYLE: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
   LLM_MAX_RETRIES: z.coerce.number().int().nonnegative().default(3),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
   LLM_MAX_TOKENS: z.coerce.number().int().positive().default(20_000),

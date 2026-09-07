@@ -220,6 +220,42 @@ program
   });
 
 program
+  .command("cards")
+  .argument("<run_id>")
+  .option("--limit <n>", "max cards to render this run", (value) => Number.parseInt(value, 10))
+  .description("Render Imejis cards for approved posts that don't have one yet")
+  .action(async (runId: string, opts: { limit?: number }) => {
+    const [{ generateCardsForRun, imejisRenderer }, { getImageStore }] = await Promise.all([
+      import("./cards/run.js"),
+      import("./cards/factory.js"),
+    ]);
+    const limit = opts.limit ?? loadEnv().CARD_BATCH_LIMIT;
+    const result = await generateCardsForRun({
+      runId,
+      limit,
+      renderer: imejisRenderer,
+      store: getImageStore(),
+    });
+    process.stdout.write(
+      `cards: ${result.succeeded} rendered, ${result.failed} failed, ${result.attempted} attempted\n`,
+    );
+    if (result.failed > 0) process.exitCode = 1;
+  });
+
+program
+  .command("card")
+  .argument("<post_id>")
+  .description("(Re)render one post's card — e.g. after editing its summary")
+  .action(async (postId: string) => {
+    const [{ generateOneCard, imejisRenderer }, { getImageStore }] = await Promise.all([
+      import("./cards/run.js"),
+      import("./cards/factory.js"),
+    ]);
+    const { url } = await generateOneCard({ postId, renderer: imejisRenderer, store: getImageStore() });
+    process.stdout.write(`${postId} → ${url}\n`);
+  });
+
+program
   .command("stats")
   .description("Quick database overview")
   .action(() => {
