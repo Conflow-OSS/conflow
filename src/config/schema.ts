@@ -38,6 +38,8 @@ export const EnvSchema = z.object({
   LLM_MAX_RETRIES: z.coerce.number().int().nonnegative().default(3),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
   LLM_MAX_TOKENS: z.coerce.number().int().positive().default(20_000),
+  LLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.8),
+  REGENERATE_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.9),
   RETRY_BASE_MS: z.coerce.number().int().positive().default(500),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });

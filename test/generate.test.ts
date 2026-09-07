@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ContentModel } from "../src/models/types.js";
-import { generateOneVariant, type VariantRequest } from "../src/pipeline/generate.js";
+import type { PostRequest } from "../src/prompt/assemble.js";
+import { generatePost } from "../src/pipeline/generate.js";
 
 process.env.LENGTH_TOLERANCE = "0.15";
 process.env.SUMMARY_MAX_CHARS = "180";
+process.env.LLM_TEMPERATURE = "0.8";
+process.env.REGENERATE_TEMPERATURE = "0.9";
 
 const IN_BAND_LONG_BODY = "word ".repeat(200).trim(); // 999 chars, inside 900–1100
 
@@ -22,8 +25,9 @@ function post(body: string, summary?: string): string {
   return `<post><body>${body}</body>${summaryTag}</post>`;
 }
 
-function longVariantRequest(): VariantRequest {
+function generateRequest(): PostRequest {
   return {
+    mode: "generate",
     topic: "Pod autoscaling",
     angle: "scaling on queue depth",
     lesson: "you react to backlog, not CPU noise",
@@ -32,40 +36,38 @@ function longVariantRequest(): VariantRequest {
     hookStyle: "questions",
     variantNumber: 1,
     variantCount: 2,
+    summaryMaxChars: 180,
   };
 }
 
-describe("generateOneVariant", () => {
+describe("generatePost", () => {
   it("marks a correctly sized post ok", async () => {
-    const variant = await generateOneVariant(
-      longVariantRequest(),
-      modelReturning(post(IN_BAND_LONG_BODY, "You should scale on queue depth, not CPU.")),
+    const result = await generatePost(
+      generateRequest(),
+      modelReturning(post(IN_BAND_LONG_BODY, "Scale on queue depth, not CPU.")),
     );
-    expect(variant.status).toBe("ok");
-    expect(variant.flagReason).toBeNull();
-    expect(variant.parsed.summary).toBe("You should scale on queue depth, not CPU.");
+    expect(result.status).toBe("ok");
+    expect(result.flagReason).toBeNull();
+    expect(result.parsed.summary).toBe("Scale on queue depth, not CPU.");
   });
 
   it("flags a post that is far too short for its format", async () => {
-    const variant = await generateOneVariant(
-      longVariantRequest(),
-      modelReturning(post("way too short")),
-    );
-    expect(variant.status).toBe("flag_length");
-    expect(variant.flagReason).toMatch(/body .* below the \d+ minimum/);
+    const result = await generatePost(generateRequest(), modelReturning(post("way too short")));
+    expect(result.status).toBe("flag_length");
+    expect(result.flagReason).toMatch(/body .* below the \d+ minimum/);
   });
 
   it("flags a post whose summary will not fit the card", async () => {
-    const longSummary = "This summary is deliberately far too long to fit on any reasonable image card ".repeat(4);
-    const variant = await generateOneVariant(
-      longVariantRequest(),
+    const longSummary = "This summary is deliberately far too long to fit on any image card ".repeat(4);
+    const result = await generatePost(
+      generateRequest(),
       modelReturning(post(IN_BAND_LONG_BODY, longSummary)),
     );
-    expect(variant.status).toBe("flag_length");
-    expect(variant.flagReason).toMatch(/summary \d+ chars — above the \d+ card limit/);
+    expect(result.status).toBe("flag_length");
+    expect(result.flagReason).toMatch(/summary \d+ chars — above the \d+ card limit/);
   });
 
-  it("passes the lesson and source facts through to the prompt", async () => {
+  it("puts the lesson and source facts into the prompt", async () => {
     let capturedUserPrompt = "";
     const capturingModel: ContentModel = {
       channel: "zai",
@@ -76,15 +78,41 @@ describe("generateOneVariant", () => {
       },
     };
 
-    await generateOneVariant(
-      {
-        ...longVariantRequest(),
-        sourceFacts: "I ran the migration with zero downtime using pg_logical.",
-      },
+    await generatePost(
+      { ...generateRequest(), sourceFacts: "I ran the migration with zero downtime using pg_logical." },
       capturingModel,
     );
 
     expect(capturedUserPrompt).toContain("you react to backlog, not CPU noise");
     expect(capturedUserPrompt).toContain("I ran the migration with zero downtime using pg_logical.");
+  });
+
+  it("raises the temperature and shows the collision when regenerating", async () => {
+    let capturedTemperature: number | undefined;
+    let capturedUserPrompt = "";
+    const capturingModel: ContentModel = {
+      channel: "zai",
+      model: "fake",
+      async generate({ user, temperature }) {
+        capturedTemperature = temperature;
+        capturedUserPrompt = user;
+        return { text: post(IN_BAND_LONG_BODY), channel: "zai", model: "fake" };
+      },
+    };
+
+    await generatePost(
+      {
+        ...generateRequest(),
+        mode: "regenerate",
+        flagReason: "too close to an existing post (similarity 0.94)",
+        collidedWith: { body: "the earlier post that this one echoed", similarity: 0.94 },
+      },
+      capturingModel,
+    );
+
+    expect(capturedTemperature).toBe(0.9);
+    expect(capturedUserPrompt).toContain("This is a REVISION");
+    expect(capturedUserPrompt).toContain("too close to an existing post (similarity 0.94)");
+    expect(capturedUserPrompt).toContain("the earlier post that this one echoed");
   });
 });

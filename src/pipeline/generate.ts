@@ -1,8 +1,8 @@
 import { loadEnv } from "../config/load.js";
 import type { ContentModel } from "../models/types.js";
-import { assemblePrompt } from "../prompt/assemble.js";
+import { assemblePrompt, type PostRequest } from "../prompt/assemble.js";
 import { charCount } from "../store/posts.js";
-import type { HookStyle, PostFormat, PostStatus } from "../store/types.js";
+import type { PostFormat, PostStatus } from "../store/types.js";
 import { parsePostXml, type ParsedPost } from "./parse.js";
 
 const CHARACTER_BAND_BY_FORMAT: Record<PostFormat, { min: number; max: number }> = {
@@ -10,48 +10,27 @@ const CHARACTER_BAND_BY_FORMAT: Record<PostFormat, { min: number; max: number }>
   long: { min: 900, max: 1100 },
 };
 
-export interface VariantRequest {
-  topic: string;
-  angle: string;
-  lesson: string;
-  otherLessons: string[];
-  format: PostFormat;
-  hookStyle: HookStyle;
-  variantNumber: number;
-  variantCount: number;
-  /** set only for the case-study flow — the model may write from these as real experience */
-  sourceFacts?: string;
-}
-
-export interface GeneratedVariant {
+export interface GeneratedPost {
   parsed: ParsedPost;
   status: PostStatus;
   flagReason: string | null;
   modelResponseText: string;
 }
 
-export async function generateOneVariant(
-  request: VariantRequest,
+/** Assemble the prompt, call the model, parse the result, check its lengths. */
+export async function generatePost(
+  request: PostRequest,
   model: ContentModel,
-): Promise<GeneratedVariant> {
-  const summaryMaxChars = loadEnv().SUMMARY_MAX_CHARS;
+): Promise<GeneratedPost> {
+  const env = loadEnv();
+  const { system, user } = assemblePrompt(request);
 
-  const { system, user } = assemblePrompt({
-    topic: request.topic,
-    angle: request.angle,
-    lesson: request.lesson,
-    otherLessons: request.otherLessons,
-    format: request.format,
-    hookStyle: request.hookStyle,
-    variantNumber: request.variantNumber,
-    variantCount: request.variantCount,
-    summaryMaxChars,
-    sourceFacts: request.sourceFacts,
-  });
+  const temperature =
+    request.mode === "regenerate" ? env.REGENERATE_TEMPERATURE : env.LLM_TEMPERATURE;
 
-  const response = await model.generate({ system, user });
+  const response = await model.generate({ system, user, temperature });
   const parsed = parsePostXml(response.text);
-  const lengthCheck = checkLengths(parsed, request.format, summaryMaxChars);
+  const lengthCheck = checkLengths(parsed, request.format, request.summaryMaxChars);
 
   return {
     parsed,

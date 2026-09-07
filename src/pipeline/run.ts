@@ -11,7 +11,7 @@ import { upsertEmbedding } from "../store/vec.js";
 import { logger } from "../util/logger.js";
 import { type EmbeddedPost, findDuplicate, loadLedgerEmbeddings } from "./dedup.js";
 import { expandAngleIntoLessons, expandStoryIntoTopics, expandTopicIntoAngles } from "./expand.js";
-import { type GeneratedVariant, generateOneVariant } from "./generate.js";
+import { type GeneratedPost, generatePost } from "./generate.js";
 import { loadTopicList } from "./inputs.js";
 import { type PostSlot, planPostSlots } from "./plan.js";
 
@@ -180,14 +180,15 @@ async function generateAndPersistLessons(input: {
   const env = loadEnv();
 
   // Phase 1 — one post per lesson. Each post is told the other lessons so it stays on its own.
-  const generatedVariants: Array<{ variant: GeneratedVariant; slot: PostSlot; lesson: string }> = [];
+  const generatedVariants: Array<{ variant: GeneratedPost; slot: PostSlot; lesson: string }> = [];
   for (let lessonIndex = 0; lessonIndex < input.lessons.length; lessonIndex++) {
     const lesson = input.lessons[lessonIndex]!;
     const slot = input.slots[lessonIndex]!;
     const otherLessons = input.lessons.filter((_, index) => index !== lessonIndex);
 
-    const variant = await generateOneVariant(
+    const variant = await generatePost(
       {
+        mode: "generate",
         topic: input.baseTopic,
         angle: input.angle,
         lesson,
@@ -196,6 +197,7 @@ async function generateAndPersistLessons(input: {
         hookStyle: slot.hookStyle,
         variantNumber: lessonIndex + 1,
         variantCount: input.lessons.length,
+        summaryMaxChars: env.SUMMARY_MAX_CHARS,
         sourceFacts: input.sourceFacts,
       },
       input.model,

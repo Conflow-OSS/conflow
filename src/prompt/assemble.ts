@@ -10,7 +10,8 @@ const goldenExampleFileByPlaceholder = {
   "{{GOLDEN_SHORT}}": "goldens/short.md",
 };
 
-export interface PostRequest {
+/** The fields both a first draft and a revision need. */
+interface CommonFields {
   topic: string;
   angle: string;
   lesson: string;
@@ -20,11 +21,20 @@ export interface PostRequest {
   variantCount: number;
   summaryMaxChars: number;
   /** the other lessons under this angle — sibling posts cover these, this one must not */
-  otherLessons?: string[];
+  otherLessons: string[];
   sourceFacts?: string;
   retrievedStyleExamples?: string[];
-  nearDuplicatePosts?: string[];
 }
+
+export type PostRequest =
+  | (CommonFields & { mode: "generate" })
+  | (CommonFields & {
+      mode: "regenerate";
+      /** why the previous attempt at this slot was rejected */
+      flagReason: string;
+      /** the post it was flagged as too close to, if it was a duplicate */
+      collidedWith?: { body: string; similarity: number };
+    });
 
 export interface AssembledPrompt {
   system: string;
@@ -34,7 +44,7 @@ export interface AssembledPrompt {
 export function assemblePrompt(request: PostRequest): AssembledPrompt {
   return {
     system: buildSystemPrompt(),
-    user: buildTaskPrompt(request),
+    user: buildUserPrompt(request),
   };
 }
 
@@ -42,24 +52,33 @@ function readPromptFile(relativePath: string): string {
   return readFileSync(join(promptDirectory, relativePath), "utf8");
 }
 
+function fillTemplate(template: string, valueByPlaceholder: Record<string, string>): string {
+  let filled = template;
+  for (const [placeholder, value] of Object.entries(valueByPlaceholder)) {
+    filled = filled.replaceAll(placeholder, value);
+  }
+  return filled;
+}
+
 function buildSystemPrompt(): string {
   let systemPrompt = readPromptFile("system.md");
   for (const [placeholder, file] of Object.entries(goldenExampleFileByPlaceholder)) {
-    const exampleText = readPromptFile(file).trim();
-    systemPrompt = systemPrompt.replaceAll(placeholder, exampleText);
+    systemPrompt = systemPrompt.replaceAll(placeholder, readPromptFile(file).trim());
   }
   return systemPrompt;
 }
 
-function resolveHookStyle(request: PostRequest): string {
-  if (request.format === "short") {
-    return "n/a";
-  }
-  return request.hookStyle ?? "questions";
+function buildUserPrompt(request: PostRequest): string {
+  const context = fillTemplate(readPromptFile("task-context.md"), contextValues(request));
+  const task =
+    request.mode === "regenerate"
+      ? fillTemplate(readPromptFile("task-regenerate.md"), regenerateValues(request))
+      : fillTemplate(readPromptFile("task-generate.md"), generateValues(request));
+  return `${context.trim()}\n\n${task.trim()}\n`;
 }
 
-function buildTaskPrompt(request: PostRequest): string {
-  const valueByPlaceholder: Record<string, string> = {
+function contextValues(request: PostRequest): Record<string, string> {
+  return {
     "{{topic}}": request.topic,
     "{{angle}}": request.angle,
     "{{lesson}}": request.lesson,
@@ -68,17 +87,45 @@ function buildTaskPrompt(request: PostRequest): string {
     "{{k}}": String(request.variantNumber),
     "{{z}}": String(request.variantCount),
     "{{summary_max_chars}}": String(request.summaryMaxChars),
-    "{{other_lessons}}": formatBulletList(request.otherLessons, "(none)"),
     "{{source_facts}}": request.sourceFacts?.trim() || "(none — advisory mode)",
     "{{retrieved_style_examples}}": formatExampleList(request.retrievedStyleExamples, "(none)"),
-    "{{near_duplicate_context}}": formatExampleList(request.nearDuplicatePosts, "(none)"),
   };
+}
 
-  let taskPrompt = readPromptFile("task.md");
-  for (const [placeholder, value] of Object.entries(valueByPlaceholder)) {
-    taskPrompt = taskPrompt.replaceAll(placeholder, value);
+function generateValues(request: PostRequest): Record<string, string> {
+  return {
+    "{{other_lessons}}": formatBulletList(request.otherLessons, "(none)"),
+  };
+}
+
+function regenerateValues(
+  request: CommonFields & { mode: "regenerate"; flagReason: string; collidedWith?: { body: string; similarity: number } },
+): Record<string, string> {
+  return {
+    "{{flag_reason}}": request.flagReason,
+    "{{collision_block}}": renderCollisionBlock(request.collidedWith),
+    "{{other_lessons}}": formatBulletList(request.otherLessons, "(none)"),
+  };
+}
+
+function renderCollisionBlock(
+  collidedWith: { body: string; similarity: number } | undefined,
+): string {
+  if (collidedWith === undefined) {
+    return "";
   }
-  return taskPrompt;
+  return (
+    `\nIt was too close (similarity ${collidedWith.similarity.toFixed(2)}) to this existing ` +
+    `post — take a clearly different angle of attack from it:\n\n` +
+    `--- the post you were too close to ---\n${collidedWith.body.trim()}\n--- end ---\n`
+  );
+}
+
+function resolveHookStyle(request: PostRequest): string {
+  if (request.format === "short") {
+    return "n/a";
+  }
+  return request.hookStyle ?? "questions";
 }
 
 function formatBulletList(items: string[] | undefined, textWhenEmpty: string): string {
@@ -92,7 +139,5 @@ function formatExampleList(posts: string[] | undefined, textWhenEmpty: string): 
   if (posts === undefined || posts.length === 0) {
     return textWhenEmpty;
   }
-  return posts
-    .map((post, index) => `--- ${index + 1} ---\n${post.trim()}`)
-    .join("\n\n");
+  return posts.map((post, index) => `--- ${index + 1} ---\n${post.trim()}`).join("\n\n");
 }

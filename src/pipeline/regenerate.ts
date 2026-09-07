@@ -5,11 +5,11 @@ import { migrate } from "../store/migrate.js";
 import { getPost, insertPost, setStatus, standingVariantsOfTopic } from "../store/posts.js";
 import { getRun } from "../store/runs.js";
 import { getTopic } from "../store/topics.js";
-import type { PostStatus } from "../store/types.js";
+import type { PostRow, PostStatus } from "../store/types.js";
 import { upsertEmbedding } from "../store/vec.js";
 import { logger } from "../util/logger.js";
 import { findDuplicate, loadEmbeddingsForPosts, loadLedgerEmbeddings } from "./dedup.js";
-import { generateOneVariant } from "./generate.js";
+import { generatePost } from "./generate.js";
 
 export interface RegenerateResult {
   oldPostId: string;
@@ -54,8 +54,9 @@ export async function regeneratePost(
     .map((sibling) => sibling.lesson_text)
     .filter((lessonText): lessonText is string => lessonText !== null);
 
-  const variant = await generateOneVariant(
+  const variant = await generatePost(
     {
+      mode: "regenerate",
       topic: topic.base_text,
       angle: topic.angle_text,
       lesson,
@@ -64,7 +65,10 @@ export async function regeneratePost(
       hookStyle: oldPost.hook_style,
       variantNumber: (oldPost.variant_index ?? 0) + 1,
       variantCount: readPostsPerAngle(run?.config_json) ?? env.GEN_Z,
+      summaryMaxChars: env.SUMMARY_MAX_CHARS,
       sourceFacts,
+      flagReason: describeWhatToFix(oldPost),
+      collidedWith: loadCollisionPost(oldPost),
     },
     model,
   );
@@ -115,6 +119,25 @@ export async function regeneratePost(
 
   logger.info("post regenerated", { oldPostId: postId, newPostId: newPost.id, status });
   return { oldPostId: postId, newPostId: newPost.id, status };
+}
+
+function describeWhatToFix(oldPost: PostRow): string {
+  if (oldPost.flag_reason) {
+    return oldPost.flag_reason;
+  }
+  return "you were asked for a fresh take on this lesson";
+}
+
+/** The post the old one was flagged as too close to, when it was a duplicate. */
+function loadCollisionPost(oldPost: PostRow): { body: string; similarity: number } | undefined {
+  if (oldPost.status !== "flag_dup" || !oldPost.dup_of_id) {
+    return undefined;
+  }
+  const collided = getPost(oldPost.dup_of_id);
+  if (!collided) {
+    return undefined;
+  }
+  return { body: collided.body, similarity: oldPost.dup_score ?? 0 };
 }
 
 function readPostsPerAngle(configJson: string | undefined): number | null {

@@ -102,6 +102,7 @@ async function main() {
       const startedAt = Date.now();
       const [lesson] = await expandAngleIntoLessons(testCase.topic, testCase.angle, 1, model);
       const { system, user } = assemblePrompt({
+        mode: "generate",
         topic: testCase.topic,
         angle: testCase.angle,
         lesson: lesson ?? testCase.angle,
@@ -112,7 +113,7 @@ async function main() {
         variantCount: 1,
         summaryMaxChars: env.SUMMARY_MAX_CHARS,
       });
-      const result = await model.generate({ system, user });
+      const result = await model.generate({ system, user, temperature: env.LLM_TEMPERATURE });
       const parsed = parsePostXml(result.text);
       const elapsedMs = Date.now() - startedAt;
       const header =

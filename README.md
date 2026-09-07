@@ -21,6 +21,7 @@ Full plan and the generation prompt:
 | M9 | Dedup + flags + regenerate | ✅ |
 | M9.5 | Lesson-driven Z variants + card summary | ✅ |
 | M10 | Export + hardening | ✅ |
+| M10.5 | Modular prompt + regeneration context | ✅ |
 
 ## Run book
 
@@ -85,7 +86,7 @@ src/
   store/      db, migrate, runs, topics, posts, vec
   embeddings/ voyage client
   models/     ContentModel interface, zai + vertex adapters, factory
-  prompt/     system.md, task.md, goldens/, assemble.ts
+  prompt/     system.md, task-context/generate/regenerate.md, goldens/, assemble.ts
   pipeline/   inputs, expand, plan, generate, parse, dedup, run, regenerate
   export/     markdown + json writers
   util/       ids, cosine, logger, retry, http, slug
@@ -100,3 +101,10 @@ data/         SQLite db + exports  (git-ignored)
 
 Publishing (Postiz), image cards (Imejis — the `<summary>` field feeds this),
 a web review dashboard, and a performance feedback loop. See the plan artifact.
+
+## Authenticate Vertex AI
+
+```
+bash <(curl -sSL \                                                     
+https://storage.googleapis.com/cloud-samples-data/adc/setup_adc.sh)
+```
