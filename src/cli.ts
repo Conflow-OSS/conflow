@@ -4,7 +4,16 @@ import { loadEnv } from "./config/load.js";
 import type { MatrixRunResult } from "./pipeline/run.js";
 import { closeDb } from "./store/db.js";
 import { migrate } from "./store/migrate.js";
-import { countByStatus, listByRun, listFlagged } from "./store/posts.js";
+import {
+  approvePendingInRun,
+  countByApproval,
+  countByStatus,
+  getPost,
+  listByRun,
+  listFlagged,
+  setApproval,
+} from "./store/posts.js";
+import type { Approval } from "./store/types.js";
 import { getRun, latestRun } from "./store/runs.js";
 import { listTopicsByRun } from "./store/topics.js";
 import { countEmbeddings } from "./store/vec.js";
@@ -119,8 +128,8 @@ program
       const topic = post.topic_id ? topicById.get(post.topic_id) : undefined;
       const hookStyleSuffix = post.hook_style ? `/${post.hook_style}` : "";
       process.stdout.write(
-        `\n━━━ ${index + 1}/${posts.length} · ${post.format}${hookStyleSuffix} · ` +
-          `${post.status} · ${post.char_count} chars ━━━\n`,
+        `\n━━━ ${index + 1}/${posts.length} · ${post.id} · ${post.format}${hookStyleSuffix} · ` +
+          `${post.status} · ${post.approval} · ${post.char_count} chars ━━━\n`,
       );
       if (topic) {
         process.stdout.write(`topic:   ${topic.base_text}\nangle:   ${topic.angle_text}\n`);
@@ -131,9 +140,55 @@ program
       if (post.summary) {
         process.stdout.write(`summary: ${post.summary}  (${post.summary_char_count} chars)\n`);
       }
+      if (post.image_url) {
+        process.stdout.write(`card:    ${post.image_url}\n`);
+      }
       process.stdout.write(`\n${post.body}\n`);
     });
   });
+
+program
+  .command("approve")
+  .argument("<post_id>")
+  .description("Mark a post approved (eligible for image cards)")
+  .action((postId: string) => setPostApprovalFromCli(postId, "approved"));
+
+program
+  .command("reject")
+  .argument("<post_id>")
+  .description("Mark a post rejected")
+  .action((postId: string) => setPostApprovalFromCli(postId, "rejected"));
+
+program
+  .command("approve-all")
+  .argument("<run_id>")
+  .option("--include-flagged", "also approve posts flagged for dup or length")
+  .description("Approve every pending post in a run")
+  .action((runId: string, opts: { includeFlagged?: boolean }) => {
+    migrate();
+    const count = approvePendingInRun(runId, opts.includeFlagged === true);
+    process.stdout.write(`approved ${count} post(s)\n`);
+  });
+
+function setPostApprovalFromCli(postId: string, approval: Approval): void {
+  migrate();
+  const post = getPost(postId);
+  if (!post) {
+    logger.error(`no post with id ${postId}`);
+    process.exitCode = 1;
+    return;
+  }
+  if (post.status === "regenerated") {
+    logger.error(`post ${postId} was already replaced — approve its replacement instead`);
+    process.exitCode = 1;
+    return;
+  }
+  if (approval === "approved" && (post.status === "flag_dup" || post.status === "flag_length")) {
+    logger.warn(`post ${postId} is ${post.status} — approving it anyway`);
+  }
+  setApproval(postId, approval);
+  process.stdout.write(`${postId} → ${approval}\n`);
+}
 
 program
   .command("regenerate")
@@ -174,7 +229,8 @@ program
     if (run) {
       process.stdout.write(
         `latest run: ${run.id}  flow=${run.flow}  ${run.created_at}\n` +
-          `  ${JSON.stringify(countByStatus(run.id))}\n`,
+          `  status:   ${JSON.stringify(countByStatus(run.id))}\n` +
+          `  approval: ${JSON.stringify(countByApproval(run.id))}\n`,
       );
     } else {
       process.stdout.write("no runs yet\n");

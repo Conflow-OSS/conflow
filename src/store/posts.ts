@@ -1,6 +1,7 @@
 import { newId } from "../util/ids.js";
 import { getDb } from "./db.js";
 import type {
+  Approval,
   HookStyle,
   PostFormat,
   PostKind,
@@ -29,7 +30,8 @@ export interface NewPost {
 
 const COLUMNS = `id, kind, run_id, topic_id, variant_index, format, hook_style,
   topic_angle, lesson_text, body, char_count, summary, summary_char_count, status,
-  flag_reason, dup_of_id, dup_score, model_channel, model_id, created_at`;
+  flag_reason, dup_of_id, dup_score, approval, approved_at, image_url, image_key,
+  image_generated_at, image_error, model_channel, model_id, created_at`;
 
 /** Character count by code point — closer to how a person (and LinkedIn) counts. */
 export function charCount(text: string): number {
@@ -56,6 +58,12 @@ export function insertPost(p: NewPost): PostRow {
     flag_reason: p.flag_reason ?? null,
     dup_of_id: p.dup_of_id ?? null,
     dup_score: p.dup_score ?? null,
+    approval: "pending",
+    approved_at: null,
+    image_url: null,
+    image_key: null,
+    image_generated_at: null,
+    image_error: null,
     model_channel: p.model_channel ?? null,
     model_id: p.model_id ?? null,
     created_at: new Date().toISOString(),
@@ -65,7 +73,9 @@ export function insertPost(p: NewPost): PostRow {
       `INSERT INTO posts (${COLUMNS}) VALUES
        (@id, @kind, @run_id, @topic_id, @variant_index, @format, @hook_style,
         @topic_angle, @lesson_text, @body, @char_count, @summary, @summary_char_count,
-        @status, @flag_reason, @dup_of_id, @dup_score, @model_channel, @model_id, @created_at)`,
+        @status, @flag_reason, @dup_of_id, @dup_score, @approval, @approved_at,
+        @image_url, @image_key, @image_generated_at, @image_error,
+        @model_channel, @model_id, @created_at)`,
     )
     .run(row);
   return row;
@@ -114,14 +124,14 @@ export function setStatus(id: string, status: PostStatus, patch: StatusPatch = {
 
 /**
  * Posts a fresh draft is checked against for the cross-topic pass:
- * every seed post, plus generated posts that are still standing (`status = 'ok'`).
- * Superseded (`regenerated`) and `discarded` drafts are excluded.
+ * every seed post, plus generated posts that are still standing (`status = 'ok'`
+ * and not rejected). Superseded (`regenerated`) and `discarded` drafts are excluded.
  */
 export function dedupLedger(opts: { excludeTopicId?: string | null } = {}): PostRow[] {
   return getDb()
     .prepare(
       `SELECT * FROM posts
-        WHERE (kind = 'seed' OR (kind = 'generated' AND status = 'ok'))
+        WHERE (kind = 'seed' OR (kind = 'generated' AND status = 'ok' AND approval != 'rejected'))
           AND (@excl IS NULL OR topic_id IS NULL OR topic_id != @excl)`,
     )
     .all({ excl: opts.excludeTopicId ?? null }) as PostRow[];
@@ -132,11 +142,59 @@ export function standingVariantsOfTopic(topicId: string, excludePostId?: string)
   return getDb()
     .prepare(
       `SELECT * FROM posts
-        WHERE topic_id = @topicId AND kind = 'generated' AND status = 'ok'
+        WHERE topic_id = @topicId AND kind = 'generated' AND status = 'ok' AND approval != 'rejected'
           AND (@excludePostId IS NULL OR id != @excludePostId)
         ORDER BY created_at`,
     )
     .all({ topicId, excludePostId: excludePostId ?? null }) as PostRow[];
+}
+
+export function setApproval(id: string, approval: Approval): void {
+  getDb()
+    .prepare(`UPDATE posts SET approval = @approval, approved_at = @approvedAt WHERE id = @id`)
+    .run({
+      id,
+      approval,
+      approvedAt: approval === "approved" ? new Date().toISOString() : null,
+    });
+}
+
+/** Approve every pending post in a run. Skips flagged posts unless includeFlagged. */
+export function approvePendingInRun(runId: string, includeFlagged: boolean): number {
+  const statusClause = includeFlagged ? "" : "AND status = 'ok'";
+  const result = getDb()
+    .prepare(
+      `UPDATE posts SET approval = 'approved', approved_at = @now
+        WHERE run_id = @runId AND kind = 'generated' AND approval = 'pending' ${statusClause}`,
+    )
+    .run({ runId, now: new Date().toISOString() });
+  return result.changes;
+}
+
+/** Approved, well-formed posts in a run that have a summary but no card image yet. */
+export function postsNeedingCards(runId: string, limit: number): PostRow[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM posts
+        WHERE run_id = @runId AND status = 'ok' AND approval = 'approved'
+          AND summary IS NOT NULL AND image_url IS NULL
+        ORDER BY created_at
+        LIMIT @limit`,
+    )
+    .all({ runId, limit }) as PostRow[];
+}
+
+export function setPostImage(id: string, image: { url: string; key: string }): void {
+  getDb()
+    .prepare(
+      `UPDATE posts SET image_url = @url, image_key = @key,
+         image_generated_at = @now, image_error = NULL WHERE id = @id`,
+    )
+    .run({ id, url: image.url, key: image.key, now: new Date().toISOString() });
+}
+
+export function setPostImageError(id: string, message: string): void {
+  getDb().prepare(`UPDATE posts SET image_error = @message WHERE id = @id`).run({ id, message });
 }
 
 export function countByStatus(runId: string): Record<string, number> {
@@ -144,4 +202,11 @@ export function countByStatus(runId: string): Record<string, number> {
     .prepare(`SELECT status, COUNT(*) AS n FROM posts WHERE run_id = ? GROUP BY status`)
     .all(runId) as Array<{ status: string; n: number }>;
   return Object.fromEntries(rows.map((r) => [r.status, r.n]));
+}
+
+export function countByApproval(runId: string): Record<string, number> {
+  const rows = getDb()
+    .prepare(`SELECT approval, COUNT(*) AS n FROM posts WHERE run_id = ? GROUP BY approval`)
+    .all(runId) as Array<{ approval: string; n: number }>;
+  return Object.fromEntries(rows.map((r) => [r.approval, r.n]));
 }

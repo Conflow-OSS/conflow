@@ -47,10 +47,14 @@ function renderPostFile(run: RunRow, post: PostRow, topic: TopicRow | undefined)
     ["format", post.format],
     ["hook_style", post.hook_style ?? "n/a"],
     ["status", post.status],
+    ["approval", post.approval],
     ["chars", post.char_count],
     ["model", joinModel(post)],
   ];
 
+  if (post.image_url) {
+    fields.push(["card", post.image_url]);
+  }
   if (isFlagged(post)) {
     fields.push(["flag_reason", post.flag_reason ?? ""]);
     if (post.dup_of_id) fields.push(["dup_of", post.dup_of_id]);
@@ -64,7 +68,9 @@ function renderPostFile(run: RunRow, post: PostRow, topic: TopicRow | undefined)
 function renderSummary(run: RunRow, posts: PostRow[]): string {
   const byStatus = tally(posts, (post) => post.status);
   const byFormat = tally(posts, (post) => post.format);
+  const byApproval = tally(posts, (post) => post.approval);
   const flagged = posts.filter(isFlagged);
+  const pending = posts.filter((post) => post.approval === "pending");
 
   const lines: string[] = [
     `# Run ${run.id}`,
@@ -73,16 +79,17 @@ function renderSummary(run: RunRow, posts: PostRow[]): string {
     `- created: ${run.created_at}`,
     `- posts: ${posts.length}  (${describeTally(byStatus)})`,
     `- formats: ${describeTally(byFormat)}`,
+    `- approval: ${describeTally(byApproval)}`,
     "",
-    "| # | status | format | hook | chars | lesson |",
-    "|---|--------|--------|------|-------|--------|",
+    "| # | status | approval | format | hook | chars | lesson |",
+    "|---|--------|----------|--------|------|-------|--------|",
   ];
 
   posts.forEach((post, index) => {
     const number = String(index + 1).padStart(2, "0");
     lines.push(
-      `| ${number} | ${post.status} | ${post.format} | ${post.hook_style ?? "n/a"} | ` +
-        `${post.char_count} | ${truncate(post.lesson_text ?? "", 60)} |`,
+      `| ${number} | ${post.status} | ${post.approval} | ${post.format} | ` +
+        `${post.hook_style ?? "n/a"} | ${post.char_count} | ${truncate(post.lesson_text ?? "", 60)} |`,
     );
   });
 
@@ -91,6 +98,14 @@ function renderSummary(run: RunRow, posts: PostRow[]): string {
     for (const post of flagged) {
       const number = String(posts.indexOf(post) + 1).padStart(2, "0");
       lines.push(`- ${number} · ${post.status} · ${post.flag_reason ?? ""}`);
+    }
+  }
+
+  if (pending.length > 0) {
+    lines.push("", `## Pending review (${pending.length})`, "");
+    for (const post of pending) {
+      const number = String(posts.indexOf(post) + 1).padStart(2, "0");
+      lines.push(`- ${number} · ${post.id} · ${truncate(post.lesson_text ?? "", 70)}`);
     }
   }
 

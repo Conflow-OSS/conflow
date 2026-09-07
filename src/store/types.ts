@@ -11,6 +11,8 @@ export type PostStatus =
   | "discarded"
   | "regenerated";
 
+export type Approval = "pending" | "approved" | "rejected";
+
 export interface RunRow {
   id: string;
   flow: Flow;
@@ -47,6 +49,12 @@ export interface PostRow {
   flag_reason: string | null;
   dup_of_id: string | null;
   dup_score: number | null;
+  approval: Approval;
+  approved_at: string | null;
+  image_url: string | null;
+  image_key: string | null;
+  image_generated_at: string | null;
+  image_error: string | null;
   model_channel: string | null;
   model_id: string | null;
   created_at: string;

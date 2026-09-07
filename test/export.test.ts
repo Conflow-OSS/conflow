@@ -96,7 +96,7 @@ describe("exportRun — markdown", () => {
     const result = exportRun(runId, "md");
     const summary = readFileSync(join(result.outDir, "_summary.md"), "utf8");
     expect(summary).toContain(`# Run ${runId}`);
-    expect(summary).toContain("| # | status | format | hook | chars | lesson |");
+    expect(summary).toContain("| # | status | approval | format | hook | chars | lesson |");
     expect(summary.match(/^\| \d\d \|/gm)).toHaveLength(2);
   });
 });

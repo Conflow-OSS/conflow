@@ -82,6 +82,12 @@ export function migrate(): void {
   addColumnIfMissing(db, "posts", "lesson_text", "TEXT");
   addColumnIfMissing(db, "posts", "summary", "TEXT");
   addColumnIfMissing(db, "posts", "summary_char_count", "INTEGER");
+  addColumnIfMissing(db, "posts", "approval", "TEXT NOT NULL DEFAULT 'pending'");
+  addColumnIfMissing(db, "posts", "approved_at", "TEXT");
+  addColumnIfMissing(db, "posts", "image_url", "TEXT");
+  addColumnIfMissing(db, "posts", "image_key", "TEXT");
+  addColumnIfMissing(db, "posts", "image_generated_at", "TEXT");
+  addColumnIfMissing(db, "posts", "image_error", "TEXT");
 
   // EMBED_DIM is a validated positive integer, safe to interpolate.
   db.exec(
