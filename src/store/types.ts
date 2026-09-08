@@ -13,6 +13,8 @@ export type PostStatus =
 
 export type Approval = "pending" | "approved" | "rejected";
 
+export type RunStatus = "queued" | "running" | "completed" | "failed";
+
 export interface RunRow {
   id: string;
   flow: Flow;
@@ -20,6 +22,10 @@ export interface RunRow {
   config_json: string;
   input_kind: InputKind;
   input_text: string | null;
+  status: RunStatus;
+  job_id: string | null;
+  error: string | null;
+  progress_json: string | null;
 }
 
 export interface TopicRow {

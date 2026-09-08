@@ -1,5 +1,7 @@
 import { Router } from "express";
+import { loadEnv } from "../../config/load.js";
 import { NotFoundError } from "../../core/errors.js";
+import { enqueueJob } from "../../core/job-queue.js";
 import { buildRunExport } from "../../export/index.js";
 import {
   approvePendingInRun,
@@ -7,11 +9,12 @@ import {
   countByStatus,
   listByRun,
 } from "../../store/posts.js";
-import { getRun, listRuns } from "../../store/runs.js";
+import { getRun, insertRun, listRuns, setRunJobId } from "../../store/runs.js";
 import { listTopicsByRun } from "../../store/topics.js";
-import type { PostRow, RunRow } from "../../store/types.js";
+import type { InputKind, PostRow, RunRow } from "../../store/types.js";
 import {
   approveAllBody,
+  createRunBody,
   exportQuery,
   parseOrThrow,
   postFilterQuery,
@@ -39,12 +42,38 @@ function withParsedConfig(run: RunRow) {
   return { ...run, config };
 }
 
+runsRouter.post("/runs", async (req, res) => {
+  const env = loadEnv();
+  const body = parseOrThrow(createRunBody, req.body ?? {});
+
+  const inputKind: InputKind = body.input.kind === "topics" ? "topic_list" : "story";
+  const inputText =
+    body.input.kind === "topics" ? body.input.topics.join("\n") : body.input.text;
+
+  const run = insertRun({
+    flow: body.flow,
+    config: { anglesPerTopic: env.GEN_Y, postsPerAngle: env.GEN_Z, model: env.MODEL_ID },
+    input_kind: inputKind,
+    input_text: inputText,
+    status: "queued",
+  });
+
+  const { jobId } = await enqueueJob("generate", { runId: run.id });
+  setRunJobId(run.id, jobId);
+
+  res.status(202).json({ runId: run.id, jobId });
+});
+
+/** Post counts for a run, kept under their own key so they don't shadow `run.status`. */
+function runCounts(runId: string) {
+  return { status: countByStatus(runId), approval: countByApproval(runId) };
+}
+
 runsRouter.get("/runs", (req, res) => {
   const { limit, offset } = parseOrThrow(runListQuery, req.query);
   const runs = listRuns(limit, offset).map((run) => ({
-    ...withParsedConfig(run),
-    status: countByStatus(run.id),
-    approval: countByApproval(run.id),
+    run: withParsedConfig(run),
+    counts: runCounts(run.id),
   }));
   res.json({ runs });
 });
@@ -53,8 +82,7 @@ runsRouter.get("/runs/:id", (req, res) => {
   const run = requireRun(req.params.id);
   res.json({
     run: withParsedConfig(run),
-    status: countByStatus(run.id),
-    approval: countByApproval(run.id),
+    counts: runCounts(run.id),
     topics: listTopicsByRun(run.id).length,
     posts: listByRun(run.id).length,
   });

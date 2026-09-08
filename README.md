@@ -24,6 +24,7 @@ Full plan and the generation prompt:
 | M10.5 | Modular prompt + regeneration context | ✅ |
 | M11 | Approval gate + Imejis image cards (MinIO) | ✅ |
 | M12a | HTTP API — skeleton + read/approve routes | ✅ |
+| M12b | Job queue (BullMQ) + worker process + `POST /runs` | ✅ |
 
 ## Run book
 
@@ -108,35 +109,50 @@ content export <run_id> [--format md|json]        write a run to data/exports/<r
 content stats                                     quick overview
 ```
 
-## HTTP API
+## HTTP API + worker
 
 The same engine, over HTTP, so a frontend can drive it. The CLI still works
-unchanged — both are thin shells over `pipeline/` · `store/` · `cards/`.
+unchanged — CLI, API, and worker are all thin shells over `pipeline/` · `store/`.
+
+Long jobs (generating a run, regenerating a post) don't fit a request: the API
+drops them on a **BullMQ queue** and returns `202` with a job id; a separate
+**worker process** runs them and writes progress back to the run row.
 
 ```sh
-docker compose up -d                 # redis (for the worker, M12b) + minio
+docker compose up -d                 # redis (queue) + minio (cards)
 #  set API_TOKEN in .env  (clients send `Authorization: Bearer <it>`)
-npm run api:dev                      # tsx watch, http://127.0.0.1:8787
-npm run build && npm run api         # compiled
+npm run api:dev                      # http://127.0.0.1:8787
+npm run worker:dev                   # in a second terminal
+#  compiled:  npm run build && npm run api   /   npm run worker
 ```
 
-Routes so far (all under `/v1`, bearer auth except `/health`):
+Routes (all under `/v1`, bearer auth except `/health`):
 
 ```
-GET  /health                              liveness + db check (no auth)
+GET  /health                              db + redis check (no auth)
 GET  /v1/stats                            vectors + latest-run breakdown
-GET  /v1/runs?limit=&offset=              runs, newest first, with counts
-GET  /v1/runs/:id                         one run + status/approval breakdown
+
+POST /v1/runs                             { flow, input } -> 202 { runId, jobId }
+      flow  = matrix | casestudy
+      input = { kind: "topics", topics: [...] } | { kind: "story", text: "..." }
+GET  /v1/runs?limit=&offset=              { runs: [{ run, counts }] }, newest first
+GET  /v1/runs/:id                         { run, counts, topics, posts }
 GET  /v1/runs/:id/posts?status=&approval= status = ok | flagged | all
-GET  /v1/runs/:id/topics                  the run's topics + angles
-POST /v1/runs/:id/approve-all             body { includeFlagged?: boolean }
+GET  /v1/runs/:id/topics
+POST /v1/runs/:id/approve-all             { includeFlagged?: boolean }
 GET  /v1/runs/:id/export?format=md|json   md = the _summary.md; json = full run
-GET  /v1/posts/:id                        one post
-PUT  /v1/posts/:id/approval               body { approval: approved|rejected|pending }
+
+GET  /v1/posts/:id
+PUT  /v1/posts/:id/approval               { approval: approved|rejected|pending }
+POST /v1/posts/:id/regenerate             -> 202 { jobId }
+
+GET  /v1/jobs/:id                         { job: { state, progress, result, error } }
 ```
 
-Long-running routes (`POST /v1/runs` to generate, regenerate, cards, seed) and
-the SSE progress stream land in M12b / M12c.
+Run lifecycle: `queued` → `running` → `completed` / `failed` (on `run.status`,
+with `run.progress_json` updated as posts land). Cards, seed, and the SSE
+progress stream (`GET /v1/runs/:id/events`) come in M12c. On worker restart, a
+run left `running` is marked `failed`; the posts it already produced stay usable.
 
 ## Layout
 
@@ -150,8 +166,9 @@ src/
   pipeline/   inputs, expand, plan, generate, parse, dedup, run, regenerate
   cards/      imejis client, ImageStore interface, MinioImageStore, run
   export/     markdown + json writers + buildRunExport
-  core/       errors, posts-service — shared by the CLI and the API
+  core/       errors, posts-service, job-queue — shared by CLI / API / worker
   api/        express app, auth, error middleware, routes/
+  worker/     BullMQ worker — handlers (generate, regenerate) + boot recovery
   util/       ids, cosine, logger, retry, http, slug
   cli.ts      command wiring
 test/         offline unit tests (vitest)

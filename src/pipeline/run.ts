@@ -4,15 +4,15 @@ import { embedDocuments } from "../embeddings/voyage.js";
 import type { ContentModel } from "../models/types.js";
 import { migrate } from "../store/migrate.js";
 import { insertPost } from "../store/posts.js";
-import { insertRun } from "../store/runs.js";
+import { insertRun, setRunProgress, setRunStatus } from "../store/runs.js";
 import { insertTopic } from "../store/topics.js";
-import type { Flow, InputKind } from "../store/types.js";
+import type { RunRow } from "../store/types.js";
 import { upsertEmbedding } from "../store/vec.js";
 import { logger } from "../util/logger.js";
 import { type EmbeddedPost, findDuplicate, loadLedgerEmbeddings } from "./dedup.js";
 import { expandAngleIntoLessons, expandStoryIntoTopics, expandTopicIntoAngles } from "./expand.js";
 import { type GeneratedPost, generatePost } from "./generate.js";
-import { loadTopicList } from "./inputs.js";
+import { loadTopicList, parseTopicList } from "./inputs.js";
 import { type PostSlot, planPostSlots } from "./plan.js";
 
 export interface MatrixRunResult {
@@ -22,19 +22,34 @@ export interface MatrixRunResult {
   flaggedAsDuplicate: number;
 }
 
+export interface RunProgress {
+  phase: "expanding" | "generating" | "done";
+  postsCreated: number;
+  postsExpected: number;
+}
+
+export type ProgressReporter = (progress: RunProgress) => void | Promise<void>;
+
+function runConfig(model: ContentModel) {
+  const env = loadEnv();
+  return { anglesPerTopic: env.GEN_Y, postsPerAngle: env.GEN_Z, model: model.model };
+}
+
+// ── CLI entrypoints — read the input file, create the run row, then execute ──
+
 export async function runMatrixFlowFromTopicList(
   topicListPath: string,
   model: ContentModel,
 ): Promise<MatrixRunResult> {
   migrate();
   const baseTopics = loadTopicList(topicListPath);
-  return runMatrix({
+  const run = insertRun({
     flow: "matrix",
-    baseTopics,
-    inputKind: "topic_list",
-    inputText: baseTopics.join("\n"),
-    model,
+    config: runConfig(model),
+    input_kind: "topic_list",
+    input_text: baseTopics.join("\n"),
   });
+  return runGenerationForRun(run, model);
 }
 
 export async function runMatrixFlowFromStory(
@@ -42,17 +57,17 @@ export async function runMatrixFlowFromStory(
   model: ContentModel,
 ): Promise<MatrixRunResult> {
   migrate();
-  const env = loadEnv();
-
   const story = readFileSync(storyPath, "utf8").trim();
   if (story.length === 0) {
     throw new Error(`story file is empty: ${storyPath}`);
   }
-
-  const baseTopics = await expandStoryIntoTopics(story, env.GEN_X, model);
-  logger.info("story expanded into topics", { count: baseTopics.length, topics: baseTopics });
-
-  return runMatrix({ flow: "matrix", baseTopics, inputKind: "story", inputText: story, model });
+  const run = insertRun({
+    flow: "matrix",
+    config: runConfig(model),
+    input_kind: "story",
+    input_text: story,
+  });
+  return runGenerationForRun(run, model);
 }
 
 /**
@@ -65,62 +80,96 @@ export async function runCaseStudyFlow(
   model: ContentModel,
 ): Promise<MatrixRunResult> {
   migrate();
-  const env = loadEnv();
-
   const caseStudy = readFileSync(caseStudyPath, "utf8").trim();
   if (caseStudy.length === 0) {
     throw new Error(`case study file is empty: ${caseStudyPath}`);
   }
-
-  const baseTopics = await expandStoryIntoTopics(caseStudy, env.GEN_X, model);
-  logger.info("case study expanded into topics", { count: baseTopics.length, topics: baseTopics });
-
-  return runMatrix({
+  const run = insertRun({
     flow: "casestudy",
-    baseTopics,
-    inputKind: "story",
-    inputText: caseStudy,
-    sourceFacts: caseStudy,
-    model,
+    config: runConfig(model),
+    input_kind: "story",
+    input_text: caseStudy,
   });
+  return runGenerationForRun(run, model);
 }
 
 /**
- * The shared matrix loop: for each base topic, expand into GEN_Y angles, then
- * generate GEN_Z posts per angle, checking each for near-duplicates before it
- * is stored.
+ * Execute a generation run whose row already exists. Both the CLI (right after
+ * creating the row) and the queue worker (picking up a queued row) call this.
+ * Moves the run through running → completed / failed and reports progress.
  */
-async function runMatrix(input: {
-  flow: Flow;
+export async function runGenerationForRun(
+  run: RunRow,
+  model: ContentModel,
+  onProgress?: ProgressReporter,
+): Promise<MatrixRunResult> {
+  migrate();
+  const env = loadEnv();
+
+  const report: ProgressReporter = async (progress) => {
+    setRunProgress(run.id, progress);
+    if (onProgress) await onProgress(progress);
+  };
+
+  setRunStatus(run.id, "running");
+
+  try {
+    const story = run.input_text ?? "";
+    let baseTopics: string[];
+
+    if (run.input_kind === "topic_list") {
+      baseTopics = parseTopicList(story);
+    } else {
+      await report({ phase: "expanding", postsCreated: 0, postsExpected: 0 });
+      baseTopics = await expandStoryIntoTopics(story, env.GEN_X, model);
+      logger.info("story expanded into topics", { runId: run.id, count: baseTopics.length });
+    }
+
+    const sourceFacts = run.flow === "casestudy" ? story : undefined;
+    const result = await runMatrixLoop({ run, baseTopics, sourceFacts, model, report });
+
+    setRunStatus(run.id, "completed");
+    await report({
+      phase: "done",
+      postsCreated: result.postsCreated,
+      postsExpected: result.postsCreated,
+    });
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    setRunStatus(run.id, "failed", message);
+    logger.error("generation run failed", { runId: run.id, error: message });
+    throw error;
+  }
+}
+
+/**
+ * The matrix loop: for each base topic, expand into GEN_Y angles, then generate
+ * GEN_Z posts per angle, checking each for near-duplicates before it is stored.
+ */
+async function runMatrixLoop(input: {
+  run: RunRow;
   baseTopics: string[];
-  inputKind: InputKind;
-  inputText: string;
   sourceFacts?: string;
   model: ContentModel;
+  report: ProgressReporter;
 }): Promise<MatrixRunResult> {
   const env = loadEnv();
-  const { baseTopics, model, sourceFacts } = input;
+  const { run, baseTopics, model, sourceFacts, report } = input;
 
   const anglesPerTopic = env.GEN_Y;
   const postsPerAngle = env.GEN_Z;
-  const totalPosts = baseTopics.length * anglesPerTopic * postsPerAngle;
-
-  const run = insertRun({
-    flow: input.flow,
-    config: { topics: baseTopics.length, anglesPerTopic, postsPerAngle, model: model.model },
-    input_kind: input.inputKind,
-    input_text: input.inputText,
-  });
+  const postsExpected = baseTopics.length * anglesPerTopic * postsPerAngle;
 
   logger.info("matrix run start", {
     runId: run.id,
     topics: baseTopics.length,
     anglesPerTopic,
     postsPerAngle,
-    totalPosts,
+    postsExpected,
   });
 
-  const postSlots = planPostSlots(totalPosts, env.SHORT_FORM_RATIO, env.HOOK_SPLIT);
+  const postSlots = planPostSlots(postsExpected, env.SHORT_FORM_RATIO, env.HOOK_SPLIT);
   let nextSlotIndex = 0;
 
   const totals = { postsCreated: 0, flaggedForLength: 0, flaggedAsDuplicate: 0 };
@@ -140,7 +189,13 @@ async function runMatrix(input: {
         angle_index: angleIndex,
       });
 
-      const lessons = await expandAngleIntoLessons(baseTopic, angle, postsPerAngle, model, sourceFacts);
+      const lessons = await expandAngleIntoLessons(
+        baseTopic,
+        angle,
+        postsPerAngle,
+        model,
+        sourceFacts,
+      );
       logger.info("angle expanded into lessons", { angle, lessons });
 
       const slotsForThisAngle = postSlots.slice(nextSlotIndex, nextSlotIndex + postsPerAngle);
@@ -160,6 +215,12 @@ async function runMatrix(input: {
       totals.postsCreated += angleTotals.created;
       totals.flaggedForLength += angleTotals.flaggedForLength;
       totals.flaggedAsDuplicate += angleTotals.flaggedAsDuplicate;
+
+      await report({
+        phase: "generating",
+        postsCreated: totals.postsCreated,
+        postsExpected,
+      });
     }
   }
 

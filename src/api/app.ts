@@ -6,6 +6,7 @@ import { logger } from "../util/logger.js";
 import { bearerAuth } from "./auth.js";
 import { errorMiddleware, notFoundHandler } from "./error-middleware.js";
 import { healthRouter } from "./routes/health.js";
+import { jobsRouter } from "./routes/jobs.js";
 import { postsRouter } from "./routes/posts.js";
 import { runsRouter } from "./routes/runs.js";
 import { statsRouter } from "./routes/stats.js";
@@ -27,6 +28,7 @@ export function createApp(): Express {
   v1.use(bearerAuth(token));
   v1.use(runsRouter);
   v1.use(postsRouter);
+  v1.use(jobsRouter);
   v1.use(statsRouter);
   app.use("/v1", v1);
 

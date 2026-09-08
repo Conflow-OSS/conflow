@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import request from "supertest";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const workDir = mkdtempSync(join(tmpdir(), "content-engine-api-"));
 process.env.DB_PATH = join(workDir, "api.db");
@@ -10,11 +10,32 @@ process.env.EMBED_DIM = "8";
 process.env.API_TOKEN = "test-token";
 process.env.LOG_LEVEL = "error";
 
+const enqueueJob = vi.fn(async (type: string) => ({ jobId: `job-${type}` }));
+const readJob = vi.fn(
+  async (id: string): Promise<Record<string, unknown> | null> => ({
+    id,
+    type: "generate",
+    state: "completed",
+    progress: { phase: "done" },
+    result: { runId: "r1" },
+    error: null,
+    createdAt: 1,
+    finishedAt: 2,
+  }),
+);
+
+vi.mock("../src/core/job-queue.js", () => ({
+  enqueueJob: (...args: [string]) => enqueueJob(...args),
+  readJob: (...args: [string]) => readJob(...args),
+  pingRedis: async () => true,
+}));
+
 const { createApp } = await import("../src/api/app.js");
 const { migrate } = await import("../src/store/migrate.js");
 const { insertRun } = await import("../src/store/runs.js");
 const { insertTopic } = await import("../src/store/topics.js");
 const { insertPost, setStatus } = await import("../src/store/posts.js");
+const { getRun } = await import("../src/store/runs.js");
 const { closeDb } = await import("../src/store/db.js");
 const { getDb } = await import("../src/store/db.js");
 
@@ -23,7 +44,12 @@ const app = createApp();
 const auth = { Authorization: "Bearer test-token" };
 
 function seedRun() {
-  const run = insertRun({ flow: "matrix", config: { topics: 1 }, input_kind: "topic_list" });
+  const run = insertRun({
+    flow: "matrix",
+    config: { topics: 1 },
+    input_kind: "topic_list",
+    status: "completed",
+  });
   const topic = insertTopic({
     run_id: run.id,
     base_text: "incident reviews",
@@ -54,6 +80,8 @@ function seedRun() {
 
 beforeEach(() => {
   getDb().exec("DELETE FROM posts; DELETE FROM topics; DELETE FROM runs; DELETE FROM vec_posts;");
+  enqueueJob.mockClear();
+  readJob.mockClear();
 });
 
 afterAll(() => {
@@ -65,7 +93,7 @@ describe("health", () => {
   it("is open without a token", async () => {
     const res = await request(app).get("/health");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true, db: "ok" });
+    expect(res.body).toEqual({ ok: true, db: "ok", redis: "ok" });
   });
 });
 
@@ -90,8 +118,9 @@ describe("runs", () => {
     const res = await request(app).get("/v1/runs").set(auth);
     expect(res.status).toBe(200);
     expect(res.body.runs).toHaveLength(1);
-    expect(res.body.runs[0].status).toMatchObject({ ok: 1, flag_dup: 1 });
-    expect(res.body.runs[0].config).toEqual({ topics: 1 });
+    expect(res.body.runs[0].run.status).toBe("completed");
+    expect(res.body.runs[0].counts.status).toMatchObject({ ok: 1, flag_dup: 1 });
+    expect(res.body.runs[0].run.config).toEqual({ topics: 1 });
   });
 
   it("returns one run with its breakdown", async () => {
@@ -100,7 +129,7 @@ describe("runs", () => {
     expect(res.status).toBe(200);
     expect(res.body.run.id).toBe(run.id);
     expect(res.body).toMatchObject({ topics: 1, posts: 2 });
-    expect(res.body.approval).toMatchObject({ pending: 2 });
+    expect(res.body.counts.approval).toMatchObject({ pending: 2 });
   });
 
   it("404s an unknown run", async () => {
@@ -219,6 +248,81 @@ describe("posts", () => {
       .set(auth)
       .send({ approval: "maybe" });
     expect(res.status).toBe(400);
+  });
+
+  it("queues a regenerate job for a generated post", async () => {
+    const { flagged } = seedRun();
+    const res = await request(app).post(`/v1/posts/${flagged.id}/regenerate`).set(auth);
+    expect(res.status).toBe(202);
+    expect(res.body.jobId).toBe("job-regenerate");
+    expect(enqueueJob).toHaveBeenCalledWith("regenerate", { postId: flagged.id });
+  });
+
+  it("409s regenerating an already-replaced post", async () => {
+    const { ok } = seedRun();
+    setStatus(ok.id, "regenerated");
+    const res = await request(app).post(`/v1/posts/${ok.id}/regenerate`).set(auth);
+    expect(res.status).toBe(409);
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /v1/runs", () => {
+  it("queues a topic-list run and returns 202 with the ids", async () => {
+    const res = await request(app)
+      .post("/v1/runs")
+      .set(auth)
+      .send({ flow: "matrix", input: { kind: "topics", topics: ["a", "b"] } });
+
+    expect(res.status).toBe(202);
+    expect(res.body.jobId).toBe("job-generate");
+    expect(enqueueJob).toHaveBeenCalledWith("generate", { runId: res.body.runId });
+
+    const run = getRun(res.body.runId)!;
+    expect(run.status).toBe("queued");
+    expect(run.job_id).toBe("job-generate");
+    expect(run.input_kind).toBe("topic_list");
+    expect(run.input_text).toBe("a\nb");
+  });
+
+  it("queues a grounded case-study run from a story", async () => {
+    const res = await request(app)
+      .post("/v1/runs")
+      .set(auth)
+      .send({ flow: "casestudy", input: { kind: "story", text: "the whole story" } });
+    expect(res.status).toBe(202);
+    expect(getRun(res.body.runId)!.flow).toBe("casestudy");
+  });
+
+  it("400s a case-study run given a topic list", async () => {
+    const res = await request(app)
+      .post("/v1/runs")
+      .set(auth)
+      .send({ flow: "casestudy", input: { kind: "topics", topics: ["a"] } });
+    expect(res.status).toBe(400);
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it("400s an empty topic list", async () => {
+    const res = await request(app)
+      .post("/v1/runs")
+      .set(auth)
+      .send({ flow: "matrix", input: { kind: "topics", topics: [] } });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /v1/jobs/:id", () => {
+  it("returns the job view", async () => {
+    const res = await request(app).get("/v1/jobs/abc").set(auth);
+    expect(res.status).toBe(200);
+    expect(res.body.job).toMatchObject({ id: "abc", state: "completed" });
+  });
+
+  it("404s when the queue has no such job", async () => {
+    readJob.mockResolvedValueOnce(null);
+    const res = await request(app).get("/v1/jobs/gone").set(auth);
+    expect(res.status).toBe(404);
   });
 });
 

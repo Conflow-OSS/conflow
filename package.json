@@ -14,6 +14,8 @@
     "content": "tsx src/cli.ts",
     "api": "node dist/api/server.js",
     "api:dev": "tsx watch src/api/server.ts",
+    "worker": "node dist/worker/index.js",
+    "worker:dev": "tsx watch src/worker/index.ts",
     "test": "vitest run"
   },
   "engines": {
@@ -22,11 +24,13 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1127.0",
     "better-sqlite3": "^11.10.0",
+    "bullmq": "^5.81.4",
     "commander": "^13.1.0",
     "cors": "^2.8.6",
     "dotenv": "^16.4.7",
     "express": "^5.2.1",
     "google-auth-library": "^11.0.2",
+    "ioredis": "^5.11.1",
     "sqlite-vec": "^0.1.7-alpha.2",
     "ulid": "^2.3.0",
     "zod": "^3.24.2"

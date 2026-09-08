@@ -13,12 +13,13 @@ export function getDb(): Database.Database {
   mkdirSync(dirname(env.DB_PATH), { recursive: true });
 
   const db = new Database(env.DB_PATH);
+  // Set this first: the API server, the worker, and the occasional CLI command
+  // all open this same file, and even switching on WAL needs a brief exclusive
+  // lock. With the timeout a contended writer waits up to 5s instead of failing
+  // with SQLITE_BUSY.
+  db.pragma("busy_timeout = 5000");
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
-  // The API server, the worker, and the occasional CLI command all open this
-  // same file. WAL already lets reads run during a write; this makes a writer
-  // wait up to 5s for another writer instead of failing with SQLITE_BUSY.
-  db.pragma("busy_timeout = 5000");
   sqliteVec.load(db);
 
   handle = db;

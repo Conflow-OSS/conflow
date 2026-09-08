@@ -42,6 +42,10 @@ export const EnvSchema = z.object({
   API_TOKEN: z.string().min(1).optional(),
   API_CORS_ORIGIN: z.string().min(1).default("*"),
 
+  // job queue (BullMQ) + worker
+  REDIS_URL: z.string().min(1).default("redis://localhost:6379"),
+  WORKER_CONCURRENCY: z.coerce.number().int().positive().default(1),
+
   // image cards
   IMEJIS_API_KEY: z.string().min(1).optional(),
   IMEJIS_DESIGN_ID: z.string().min(1).default("sbOUjiAfOhsl7UfKBtuqU"),

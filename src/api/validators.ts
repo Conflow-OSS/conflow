@@ -37,3 +37,15 @@ export const approveAllBody = z.object({
 export const approvalBody = z.object({
   approval: z.enum(["approved", "rejected", "pending"]),
 });
+
+export const createRunBody = z
+  .object({
+    flow: z.enum(["matrix", "casestudy"]),
+    input: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("topics"), topics: z.array(z.string().min(1)).min(1) }),
+      z.object({ kind: z.literal("story"), text: z.string().min(1) }),
+    ]),
+  })
+  .refine((body) => !(body.flow === "casestudy" && body.input.kind === "topics"), {
+    message: "the casestudy flow needs a story, not a topic list",
+  });

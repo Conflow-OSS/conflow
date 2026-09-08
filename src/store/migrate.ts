@@ -13,8 +13,16 @@ function addColumnIfMissing(
 ): void {
   const existingColumns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
   const alreadyThere = existingColumns.some((existing) => existing.name === column);
-  if (!alreadyThere) {
+  if (alreadyThere) return;
+
+  try {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${columnType}`);
+  } catch (error) {
+    // The API and the worker both migrate on startup; against a brand-new
+    // database they can both pass the check above and then both ALTER. SQLite
+    // has no `ADD COLUMN IF NOT EXISTS`, so the loser sees "duplicate column".
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("duplicate column name")) throw error;
   }
 }
 
@@ -79,6 +87,12 @@ export function migrate(): void {
   `);
 
   // Columns added after the first release — applied only if the database predates them.
+  // Runs made before the queue existed are treated as already finished.
+  addColumnIfMissing(db, "runs", "status", "TEXT NOT NULL DEFAULT 'completed'");
+  addColumnIfMissing(db, "runs", "job_id", "TEXT");
+  addColumnIfMissing(db, "runs", "error", "TEXT");
+  addColumnIfMissing(db, "runs", "progress_json", "TEXT");
+
   addColumnIfMissing(db, "posts", "lesson_text", "TEXT");
   addColumnIfMissing(db, "posts", "summary", "TEXT");
   addColumnIfMissing(db, "posts", "summary_char_count", "INTEGER");
@@ -102,7 +116,10 @@ export function migrate(): void {
     .get() as { value: string } | undefined;
 
   if (!row) {
-    db.prepare(`INSERT INTO meta (key, value) VALUES ('embed_dim', ?)`).run(String(env.EMBED_DIM));
+    // OR IGNORE: the API and worker can both reach this on a fresh database.
+    db.prepare(`INSERT OR IGNORE INTO meta (key, value) VALUES ('embed_dim', ?)`).run(
+      String(env.EMBED_DIM),
+    );
   } else if (row.value !== String(env.EMBED_DIM)) {
     throw new Error(
       `EMBED_DIM changed (${row.value} -> ${env.EMBED_DIM}). ` +
