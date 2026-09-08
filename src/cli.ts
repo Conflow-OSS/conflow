@@ -8,10 +8,8 @@ import {
   approvePendingInRun,
   countByApproval,
   countByStatus,
-  getPost,
   listByRun,
   listFlagged,
-  setApproval,
 } from "./store/posts.js";
 import type { Approval } from "./store/types.js";
 import { getRun, latestRun } from "./store/runs.js";
@@ -170,24 +168,16 @@ program
     process.stdout.write(`approved ${count} post(s)\n`);
   });
 
-function setPostApprovalFromCli(postId: string, approval: Approval): void {
-  migrate();
-  const post = getPost(postId);
-  if (!post) {
-    logger.error(`no post with id ${postId}`);
+async function setPostApprovalFromCli(postId: string, approval: Approval): Promise<void> {
+  const { changePostApproval } = await import("./core/posts-service.js");
+  try {
+    const { warning } = changePostApproval(postId, approval);
+    if (warning) logger.warn(`post ${postId}: ${warning}`);
+    process.stdout.write(`${postId} → ${approval}\n`);
+  } catch (error) {
+    logger.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
-    return;
   }
-  if (post.status === "regenerated") {
-    logger.error(`post ${postId} was already replaced — approve its replacement instead`);
-    process.exitCode = 1;
-    return;
-  }
-  if (approval === "approved" && (post.status === "flag_dup" || post.status === "flag_length")) {
-    logger.warn(`post ${postId} is ${post.status} — approving it anyway`);
-  }
-  setApproval(postId, approval);
-  process.stdout.write(`${postId} → ${approval}\n`);
 }
 
 program

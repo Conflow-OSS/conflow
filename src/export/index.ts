@@ -1,11 +1,12 @@
 import { join } from "node:path";
 import { loadEnv } from "../config/load.js";
+import { NotFoundError } from "../core/errors.js";
 import { migrate } from "../store/migrate.js";
 import { listByRun } from "../store/posts.js";
 import { getRun } from "../store/runs.js";
 import { listTopicsByRun } from "../store/topics.js";
-import { writeJsonExport } from "./json.js";
-import { writeMarkdownExport } from "./markdown.js";
+import { buildJsonExport, writeJsonExport } from "./json.js";
+import { buildMarkdownSummary, writeMarkdownExport } from "./markdown.js";
 
 export type ExportFormat = "md" | "json";
 
@@ -33,4 +34,37 @@ export function exportRun(runId: string, format: ExportFormat): ExportResult {
   }
 
   return { outDir, files: writeMarkdownExport(run, posts, topicById, outDir) };
+}
+
+export interface RunExportPayload {
+  filename: string;
+  contentType: string;
+  body: string;
+}
+
+/** A run's export as an in-memory payload — the API returns this instead of writing files. */
+export function buildRunExport(runId: string, format: ExportFormat): RunExportPayload {
+  migrate();
+
+  const run = getRun(runId);
+  if (!run) {
+    throw new NotFoundError(`no run with id ${runId}`);
+  }
+
+  const posts = listByRun(runId);
+
+  if (format === "json") {
+    const topicById = new Map(listTopicsByRun(runId).map((topic) => [topic.id, topic]));
+    return {
+      filename: `${runId}.json`,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildJsonExport(run, posts, topicById), null, 2) + "\n",
+    };
+  }
+
+  return {
+    filename: `${runId}.md`,
+    contentType: "text/markdown; charset=utf-8",
+    body: buildMarkdownSummary(run, posts),
+  };
 }

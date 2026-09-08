@@ -2,14 +2,13 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { PostRow, RunRow, TopicRow } from "../store/types.js";
 
-/** Writes the whole run as a single JSON file for programmatic use. */
-export function writeJsonExport(
+/** The whole run as one plain object — used by both the file export and the API. */
+export function buildJsonExport(
   run: RunRow,
   posts: PostRow[],
   topicById: Map<string, TopicRow>,
-  outPath: string,
-): void {
-  const payload = {
+): unknown {
+  return {
     run: {
       id: run.id,
       flow: run.flow,
@@ -26,7 +25,16 @@ export function writeJsonExport(
       };
     }),
   };
+}
 
+/** Writes the whole run as a single JSON file for programmatic use. */
+export function writeJsonExport(
+  run: RunRow,
+  posts: PostRow[],
+  topicById: Map<string, TopicRow>,
+  outPath: string,
+): void {
+  const payload = buildJsonExport(run, posts, topicById);
   mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, JSON.stringify(payload, null, 2) + "\n");
 }

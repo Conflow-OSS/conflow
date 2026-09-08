@@ -36,6 +36,12 @@ export const EnvSchema = z.object({
   DB_PATH: z.string().min(1).default("./data/content.db"),
   EXPORT_DIR: z.string().min(1).default("./data/exports"),
 
+  // http api
+  API_PORT: z.coerce.number().int().positive().default(8787),
+  API_HOST: z.string().min(1).default("127.0.0.1"),
+  API_TOKEN: z.string().min(1).optional(),
+  API_CORS_ORIGIN: z.string().min(1).default("*"),
+
   // image cards
   IMEJIS_API_KEY: z.string().min(1).optional(),
   IMEJIS_DESIGN_ID: z.string().min(1).default("sbOUjiAfOhsl7UfKBtuqU"),

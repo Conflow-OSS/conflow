@@ -37,3 +37,10 @@ export function requireModel(env: Env): void {
     throw new Error("VERTEX_PROJECT is required when MODEL_CHANNEL=vertex");
   }
 }
+
+export function requireApiToken(env: Env): string {
+  if (!env.API_TOKEN) {
+    throw new Error("API_TOKEN is required to run the API server — set it in .env");
+  }
+  return env.API_TOKEN;
+}

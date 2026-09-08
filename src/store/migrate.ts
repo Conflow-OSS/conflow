@@ -110,5 +110,5 @@ export function migrate(): void {
     );
   }
 
-  logger.info("schema ready", { db: env.DB_PATH, embed_dim: env.EMBED_DIM });
+  logger.debug("schema ready", { db: env.DB_PATH, embed_dim: env.EMBED_DIM });
 }

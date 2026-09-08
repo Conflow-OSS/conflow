@@ -36,3 +36,10 @@ export function latestRun(): RunRow | undefined {
     .prepare(`SELECT * FROM runs ORDER BY created_at DESC LIMIT 1`)
     .get() as RunRow | undefined;
 }
+
+/** Runs newest first, for the API's run list. */
+export function listRuns(limit: number, offset: number): RunRow[] {
+  return getDb()
+    .prepare(`SELECT * FROM runs ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+    .all(limit, offset) as RunRow[];
+}

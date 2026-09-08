@@ -23,6 +23,7 @@ Full plan and the generation prompt:
 | M10 | Export + hardening | ✅ |
 | M10.5 | Modular prompt + regeneration context | ✅ |
 | M11 | Approval gate + Imejis image cards (MinIO) | ✅ |
+| M12a | HTTP API — skeleton + read/approve routes | ✅ |
 
 ## Run book
 
@@ -107,6 +108,36 @@ content export <run_id> [--format md|json]        write a run to data/exports/<r
 content stats                                     quick overview
 ```
 
+## HTTP API
+
+The same engine, over HTTP, so a frontend can drive it. The CLI still works
+unchanged — both are thin shells over `pipeline/` · `store/` · `cards/`.
+
+```sh
+docker compose up -d                 # redis (for the worker, M12b) + minio
+#  set API_TOKEN in .env  (clients send `Authorization: Bearer <it>`)
+npm run api:dev                      # tsx watch, http://127.0.0.1:8787
+npm run build && npm run api         # compiled
+```
+
+Routes so far (all under `/v1`, bearer auth except `/health`):
+
+```
+GET  /health                              liveness + db check (no auth)
+GET  /v1/stats                            vectors + latest-run breakdown
+GET  /v1/runs?limit=&offset=              runs, newest first, with counts
+GET  /v1/runs/:id                         one run + status/approval breakdown
+GET  /v1/runs/:id/posts?status=&approval= status = ok | flagged | all
+GET  /v1/runs/:id/topics                  the run's topics + angles
+POST /v1/runs/:id/approve-all             body { includeFlagged?: boolean }
+GET  /v1/runs/:id/export?format=md|json   md = the _summary.md; json = full run
+GET  /v1/posts/:id                        one post
+PUT  /v1/posts/:id/approval               body { approval: approved|rejected|pending }
+```
+
+Long-running routes (`POST /v1/runs` to generate, regenerate, cards, seed) and
+the SSE progress stream land in M12b / M12c.
+
 ## Layout
 
 ```
@@ -118,7 +149,9 @@ src/
   prompt/     system.md, task-context/generate/regenerate.md, goldens/, assemble.ts
   pipeline/   inputs, expand, plan, generate, parse, dedup, run, regenerate
   cards/      imejis client, ImageStore interface, MinioImageStore, run
-  export/     markdown + json writers
+  export/     markdown + json writers + buildRunExport
+  core/       errors, posts-service — shared by the CLI and the API
+  api/        express app, auth, error middleware, routes/
   util/       ids, cosine, logger, retry, http, slug
   cli.ts      command wiring
 test/         offline unit tests (vitest)

@@ -30,6 +30,11 @@ export function writeMarkdownExport(
   return writtenFiles;
 }
 
+/** The `_summary.md` content on its own — the API serves this for `format=md`. */
+export function buildMarkdownSummary(run: RunRow, posts: PostRow[]): string {
+  return renderSummary(run, posts);
+}
+
 function isFlagged(post: PostRow): boolean {
   return post.status === "flag_dup" || post.status === "flag_length";
 }
