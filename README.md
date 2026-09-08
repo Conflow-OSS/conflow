@@ -76,6 +76,16 @@ API calls retry with exponential backoff (`LLM_MAX_RETRIES`, `RETRY_BASE_MS`,
 
 ## Commands
 
+Run the CLI one of three ways:
+
+```sh
+npm run dev -- <cmd> [args]     # via tsx, no build — what the run book uses
+npm run build && ./dist/cli.js <cmd>
+npm run build && npm link       # once → then `content <cmd>` anywhere
+```
+
+(`npx content` fetches an unrelated package from the registry — don't use it.)
+
 ```
 content migrate                                   create / update the schema
 content seed <dir>                                embed hand-written posts
@@ -124,4 +134,5 @@ a web review dashboard, and a performance feedback loop. See the plan artifact.
 ```
 bash <(curl -sSL \                                                     
 https://storage.googleapis.com/cloud-samples-data/adc/setup_adc.sh)
+
 ```

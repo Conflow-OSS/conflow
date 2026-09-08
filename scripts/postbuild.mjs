@@ -1,5 +1,7 @@
-// tsc compiles .ts only, so the prompt .md files have to be copied into dist/ by hand.
-import { cpSync, existsSync, readdirSync, rmSync } from "node:fs";
+// Runs right after `tsc`. Two jobs it can't do:
+//   1. copy the prompt .md files into dist/ (tsc compiles .ts only)
+//   2. make dist/cli.js executable, so the `content` bin actually runs
+import { chmodSync, cpSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 // Remove previously copied prompt files first, so a renamed or deleted one does
@@ -19,4 +21,6 @@ cpSync("src/prompt", "dist/prompt", {
   filter: (path) => !path.endsWith(".ts"),
 });
 
-console.log("copied prompt files to dist/prompt");
+chmodSync("dist/cli.js", 0o755);
+
+console.log("postbuild: prompt files copied, dist/cli.js made executable");
