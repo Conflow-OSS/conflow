@@ -56,6 +56,10 @@ export const EnvSchema = z.object({
     .enum(["true", "false"])
     .default("true")
     .transform((value) => value === "true"),
+  S3_PUBLIC_READ: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
   LLM_MAX_RETRIES: z.coerce.number().int().nonnegative().default(3),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(120_000),
   LLM_MAX_TOKENS: z.coerce.number().int().positive().default(20_000),

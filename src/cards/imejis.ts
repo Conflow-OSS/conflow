@@ -5,8 +5,12 @@ import { apiRetry, withRetry } from "../util/retry.js";
 const RENDER_BASE_URL = "https://render.imejis.io/v1";
 
 /**
- * Render one card from the Imejis template. The template has a single editable
- * field, `summary`. Returns the image bytes.
+ * Render one card from the Imejis template and return the image bytes.
+ *
+ * The request body is keyed by template layer name. We only override the
+ * `summary` text layer; every other layer (background, artwork) keeps its
+ * template default because we leave it out of the body. Imejis expects the
+ * layer value as an object, so a bare string will not take effect.
  */
 export async function renderCard(summary: string): Promise<Buffer> {
   const env = loadEnv();
@@ -24,7 +28,7 @@ export async function renderCard(summary: string): Promise<Buffer> {
         "dma-api-key": env.IMEJIS_API_KEY!,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ summary }),
+      body: JSON.stringify({ summary: { text: summary } }),
     });
 
     if (!response.ok) {

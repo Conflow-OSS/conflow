@@ -2,6 +2,7 @@ import {
   CreateBucketCommand,
   HeadBucketCommand,
   HeadObjectCommand,
+  PutBucketPolicyCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -14,7 +15,8 @@ export class MinioImageStore implements ImageStore {
   private readonly client: S3Client;
   private readonly bucket: string;
   private readonly publicUrlBase: string;
-  private bucketChecked = false;
+  private readonly publicRead: boolean;
+  private bucketReady = false;
 
   constructor() {
     const env = loadEnv();
@@ -26,6 +28,7 @@ export class MinioImageStore implements ImageStore {
 
     this.bucket = env.S3_BUCKET;
     this.publicUrlBase = env.S3_PUBLIC_URL_BASE.replace(/\/+$/, "");
+    this.publicRead = env.S3_PUBLIC_READ;
     this.client = new S3Client({
       endpoint: env.S3_ENDPOINT,
       region: env.S3_REGION,
@@ -56,13 +59,44 @@ export class MinioImageStore implements ImageStore {
   }
 
   private async ensureBucket(): Promise<void> {
-    if (this.bucketChecked) return;
+    if (this.bucketReady) return;
+
     try {
       await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
     } catch {
       logger.info("creating storage bucket", { bucket: this.bucket });
       await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
     }
-    this.bucketChecked = true;
+
+    if (this.publicRead) {
+      await this.applyPublicReadPolicy();
+    }
+    this.bucketReady = true;
+  }
+
+  /** Anonymous GET on every object, so the stored URLs open in a browser and a
+   *  publisher can fetch them. Idempotent. */
+  private async applyPublicReadPolicy(): Promise<void> {
+    const policy = {
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Effect: "Allow",
+          Principal: { AWS: ["*"] },
+          Action: ["s3:GetObject"],
+          Resource: [`arn:aws:s3:::${this.bucket}/*`],
+        },
+      ],
+    };
+    try {
+      await this.client.send(
+        new PutBucketPolicyCommand({ Bucket: this.bucket, Policy: JSON.stringify(policy) }),
+      );
+    } catch (error) {
+      logger.warn("could not set the bucket read policy — objects may not be publicly readable", {
+        bucket: this.bucket,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }

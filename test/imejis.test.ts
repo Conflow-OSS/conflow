@@ -39,7 +39,7 @@ describe("renderCard", () => {
     expect(url).toBe("https://render.imejis.io/v1/designABC?format=png");
     expect((init as RequestInit).headers).toMatchObject({ "dma-api-key": "test-key" });
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
-      summary: "Require one approved review before any merge.",
+      summary: { text: "Require one approved review before any merge." },
     });
   });
 

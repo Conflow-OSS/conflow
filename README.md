@@ -55,7 +55,9 @@ npm run dev -- reject  <post_id>
 npm run dev -- approve-all <run_id>       # bulk-approve every pending ok post
 
 # 6. image cards  (needs IMEJIS_API_KEY; IMAGE_STORE=disk writes to CARD_DIR,
-#                  IMAGE_STORE=minio needs the S3_* env + a running MinIO)
+#                  IMAGE_STORE=minio needs the S3_* env + a running MinIO. The
+#                  store creates the bucket and, with S3_PUBLIC_READ=true, sets an
+#                  anonymous-GET policy so the card URLs open in a browser.)
 npm run dev -- cards <run_id> --limit 10  # render a card per approved post w/o one
 npm run dev -- card  <post_id>            # (re)render one card, e.g. after editing its summary
 
