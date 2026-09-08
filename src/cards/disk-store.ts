@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { loadEnv } from "../config/load.js";
 import type { ImageStore, StoredImage } from "./image-store.js";
@@ -9,12 +9,18 @@ import type { ImageStore, StoredImage } from "./image-store.js";
  */
 export class LocalDiskImageStore implements ImageStore {
   async put(key: string, body: Buffer, _contentType: string): Promise<StoredImage> {
-    const directory = loadEnv().CARD_DIR;
-    mkdirSync(directory, { recursive: true });
-
-    const filePath = join(directory, basename(key));
+    const filePath = this.pathFor(key);
+    mkdirSync(loadEnv().CARD_DIR, { recursive: true });
     writeFileSync(filePath, body);
+    return { url: `file://${filePath}`, key };
+  }
 
-    return { url: `file://${resolve(filePath)}`, key };
+  async find(key: string): Promise<StoredImage | null> {
+    const filePath = this.pathFor(key);
+    return existsSync(filePath) ? { url: `file://${filePath}`, key } : null;
+  }
+
+  private pathFor(key: string): string {
+    return resolve(join(loadEnv().CARD_DIR, basename(key)));
   }
 }

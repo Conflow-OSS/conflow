@@ -9,6 +9,8 @@ const workDir = mkdtempSync(join(tmpdir(), "content-engine-cards-"));
 process.env.DB_PATH = join(workDir, "cards.db");
 process.env.EMBED_DIM = "8";
 process.env.CARD_IMAGE_FORMAT = "png";
+process.env.CARD_RENDER_DELAY_MS = "0";
+process.env.IMEJIS_DESIGN_ID = "designX";
 process.env.LOG_LEVEL = "error";
 
 const { migrate } = await import("../src/store/migrate.js");
@@ -20,21 +22,26 @@ const { closeDb } = await import("../src/store/db.js");
 migrate();
 
 const renderer: CardRenderer = {
-  render: vi.fn(async (summary: string) => Buffer.from(`png-for:${summary}`)),
+  render: vi.fn(async (summary: string) => Buffer.from(`png:${summary}`)),
   contentType: () => "image/png",
 };
 
 class FakeStore implements ImageStore {
-  puts: Array<{ key: string; size: number; contentType: string }> = [];
-  failNextKeys = new Set<string>();
+  objects = new Map<string, Buffer>();
+  failPutsBefore = 0; // fail the first N put() calls
+  putCount = 0;
 
-  async put(key: string, body: Buffer, contentType: string): Promise<StoredImage> {
-    if (this.failNextKeys.has(key)) {
-      this.failNextKeys.delete(key);
+  async put(key: string, body: Buffer): Promise<StoredImage> {
+    this.putCount++;
+    if (this.putCount <= this.failPutsBefore) {
       throw new Error("storage unavailable");
     }
-    this.puts.push({ key, size: body.length, contentType });
+    this.objects.set(key, body);
     return { url: `https://cdn.example/${key}`, key };
+  }
+
+  async find(key: string): Promise<StoredImage | null> {
+    return this.objects.has(key) ? { url: `https://cdn.example/${key}`, key } : null;
   }
 }
 
@@ -66,74 +73,80 @@ afterAll(() => {
 });
 
 describe("generateCardsForRun", () => {
-  it("renders and stores a card for each approved post, recording the url", async () => {
+  it("renders a card for each approved post and records the url", async () => {
     const a = approvedPost("first summary");
     const b = approvedPost("second summary");
 
     const result = await generateCardsForRun({ runId, limit: 10, renderer, store });
 
-    expect(result).toEqual({ attempted: 2, succeeded: 2, failed: 0 });
-    expect(getPost(a)!.image_url).toBe(`https://cdn.example/cards/${a}.png`);
-    expect(getPost(b)!.image_key).toBe(`cards/${b}.png`);
-    expect(store.puts).toHaveLength(2);
+    expect(result).toMatchObject({ attempted: 2, rendered: 2, reused: 0, failed: 0 });
+    expect(getPost(a)!.image_url).toContain("https://cdn.example/cards/");
+    expect(getPost(b)!.image_url).toContain(".png");
+    expect(store.objects.size).toBe(2);
   });
 
-  it("respects the limit and leaves the rest for a later run", async () => {
-    approvedPost("one");
-    approvedPost("two");
-    approvedPost("three");
-
-    const first = await generateCardsForRun({ runId, limit: 2, renderer, store });
-    expect(first.succeeded).toBe(2);
-
-    const second = await generateCardsForRun({ runId, limit: 10, renderer, store });
-    expect(second.succeeded).toBe(1); // only the un-carded one
-  });
-
-  it("records the error on a failed upload and keeps going", async () => {
-    const a = approvedPost("will fail");
-    const b = approvedPost("will succeed");
-    store.failNextKeys.add(`cards/${a}.png`);
+  it("reuses a cached render for an identical summary instead of rendering again", async () => {
+    const a = approvedPost("the same line");
+    const b = approvedPost("the same line");
 
     const result = await generateCardsForRun({ runId, limit: 10, renderer, store });
 
-    expect(result).toEqual({ attempted: 2, succeeded: 1, failed: 1 });
+    expect(result).toMatchObject({ rendered: 1, reused: 1 });
+    expect(renderer.render).toHaveBeenCalledTimes(1);
+    expect(getPost(a)!.image_url).toBe(getPost(b)!.image_url);
+  });
+
+  it("re-running only renders the posts that were added since", async () => {
+    approvedPost("one");
+    approvedPost("two");
+    await generateCardsForRun({ runId, limit: 10, renderer, store });
+    vi.clearAllMocks();
+
+    approvedPost("three");
+    const second = await generateCardsForRun({ runId, limit: 10, renderer, store });
+
+    expect(second).toMatchObject({ attempted: 1, rendered: 1 });
+    expect(renderer.render).toHaveBeenCalledTimes(1);
+  });
+
+  it("respects the limit", async () => {
+    approvedPost("a");
+    approvedPost("b");
+    approvedPost("c");
+    const first = await generateCardsForRun({ runId, limit: 2, renderer, store });
+    expect(first.attempted).toBe(2);
+  });
+
+  it("records the error on a failed upload and keeps going", async () => {
+    const a = approvedPost("first post");
+    const b = approvedPost("second post");
+    store.failPutsBefore = 1; // the first upload fails, the second succeeds
+
+    const result = await generateCardsForRun({ runId, limit: 10, renderer, store });
+
+    expect(result).toMatchObject({ attempted: 2, rendered: 1, failed: 1 });
     expect(getPost(a)!.image_url).toBeNull();
     expect(getPost(a)!.image_error).toMatch(/storage unavailable/);
     expect(getPost(b)!.image_url).not.toBeNull();
   });
 
   it("skips posts that are not approved or have no summary", async () => {
-    const post = insertPost({ kind: "generated", run_id: runId, format: "long", body: "x".repeat(1000), summary: "s", status: "ok" });
-    void post; // pending, not approved
-    approvedPost(null); // approved but no summary
+    insertPost({ kind: "generated", run_id: runId, format: "long", body: "x".repeat(1000), summary: "s", status: "ok" });
+    approvedPost(null);
 
     const result = await generateCardsForRun({ runId, limit: 10, renderer, store });
     expect(result.attempted).toBe(0);
   });
-
-  it("retries only the upload on a re-run (never re-renders a stored card)", async () => {
-    const a = approvedPost("retry me");
-    store.failNextKeys.add(`cards/${a}.png`);
-
-    await generateCardsForRun({ runId, limit: 10, renderer, store }); // fails
-    expect(getPost(a)!.image_url).toBeNull();
-
-    await generateCardsForRun({ runId, limit: 10, renderer, store }); // succeeds
-    expect(getPost(a)!.image_url).not.toBeNull();
-    expect(renderer.render).toHaveBeenCalledTimes(2); // once per attempt — cache would make this 1
-  });
 });
 
 describe("generateOneCard", () => {
-  it("re-renders a specific post even if it already has a card", async () => {
-    const a = approvedPost("v1");
+  it("always renders fresh, even for a summary already cached", async () => {
+    const a = approvedPost("cached line");
     await generateCardsForRun({ runId, limit: 10, renderer, store });
-    const firstUrl = getPost(a)!.image_url;
+    vi.clearAllMocks();
 
-    const { url } = await generateOneCard({ postId: a, renderer, store });
-    expect(url).toBe(firstUrl); // same key, overwritten
-    expect(store.puts.filter((p) => p.key === `cards/${a}.png`)).toHaveLength(2);
+    await generateOneCard({ postId: a, renderer, store });
+    expect(renderer.render).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a post with no summary", async () => {

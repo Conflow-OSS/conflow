@@ -26,4 +26,12 @@ describe("LocalDiskImageStore", () => {
     expect(stored.url).toBe(`file://${expectedPath}`);
     expect(stored.key).toBe("cards/post-123.png");
   });
+
+  it("find() returns the stored image only after it has been put", async () => {
+    const store = new LocalDiskImageStore();
+    expect(await store.find("cards/never-written.png")).toBeNull();
+
+    await store.put("cards/written.png", Buffer.from("x"), "image/png");
+    expect(await store.find("cards/written.png")).toMatchObject({ key: "cards/written.png" });
+  });
 });

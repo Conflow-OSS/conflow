@@ -237,7 +237,8 @@ program
       store: getImageStore(),
     });
     process.stdout.write(
-      `cards: ${result.succeeded} rendered, ${result.failed} failed, ${result.attempted} attempted\n`,
+      `cards: ${result.rendered} rendered, ${result.reused} reused, ` +
+        `${result.failed} failed  (${result.attempted} posts)\n`,
     );
     if (result.failed > 0) process.exitCode = 1;
   });

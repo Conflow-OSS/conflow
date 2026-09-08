@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 import { loadEnv } from "../config/load.js";
 import { migrate } from "../store/migrate.js";
 import { getPost, postsNeedingCards, setPostImage, setPostImageError } from "../store/posts.js";
 import { logger } from "../util/logger.js";
+import type { ImageStore, StoredImage } from "./image-store.js";
 import { cardContentType, renderCard } from "./imejis.js";
-import type { ImageStore } from "./image-store.js";
 
 /** How a card gets rendered. Real one calls Imejis; tests inject a fake. */
 export interface CardRenderer {
@@ -18,14 +20,16 @@ export const imejisRenderer: CardRenderer = {
 
 export interface CardBatchResult {
   attempted: number;
-  succeeded: number;
+  rendered: number;
+  reused: number;
   failed: number;
 }
 
 /**
  * Render a card for each approved post in the run that still needs one, up to
- * `limit`. Each post is committed right after its upload, so the batch is
- * resumable — a re-run picks up where it stopped.
+ * `limit`. The stored image is keyed by the hash of its summary, so an identical
+ * summary is never rendered twice — re-running only renders what changed.
+ * Each post is committed right after its upload, so the batch is resumable.
  */
 export async function generateCardsForRun(input: {
   runId: string;
@@ -34,22 +38,30 @@ export async function generateCardsForRun(input: {
   store: ImageStore;
 }): Promise<CardBatchResult> {
   migrate();
+  const renderDelayMs = loadEnv().CARD_RENDER_DELAY_MS;
 
   const posts = postsNeedingCards(input.runId, input.limit);
-  const result: CardBatchResult = { attempted: 0, succeeded: 0, failed: 0 };
+  const result: CardBatchResult = { attempted: 0, rendered: 0, reused: 0, failed: 0 };
 
   for (const post of posts) {
     result.attempted++;
-    const outcome = await renderAndStore(post.id, post.summary!, input.renderer, input.store);
-    if (outcome.ok) result.succeeded++;
-    else result.failed++;
+    const outcome = await placeCard(post.id, post.summary!, input.renderer, input.store);
+
+    if (outcome.status === "rendered") {
+      result.rendered++;
+      if (renderDelayMs > 0) await sleep(renderDelayMs);
+    } else if (outcome.status === "reused") {
+      result.reused++;
+    } else {
+      result.failed++;
+    }
   }
 
   logger.info("card batch done", { runId: input.runId, ...result });
   return result;
 }
 
-/** (Re)render one specific post's card — for after you tweak a summary. */
+/** (Re)render one specific post's card — always a fresh render, no cache. */
 export async function generateOneCard(input: {
   postId: string;
   renderer: CardRenderer;
@@ -58,40 +70,61 @@ export async function generateOneCard(input: {
   migrate();
 
   const post = getPost(input.postId);
-  if (!post) {
-    throw new Error(`no post with id ${input.postId}`);
-  }
-  if (!post.summary) {
-    throw new Error(`post ${input.postId} has no summary to put on a card`);
-  }
+  if (!post) throw new Error(`no post with id ${input.postId}`);
+  if (!post.summary) throw new Error(`post ${input.postId} has no summary to put on a card`);
 
-  const outcome = await renderAndStore(post.id, post.summary, input.renderer, input.store);
-  if (!outcome.ok) {
-    throw new Error(outcome.error);
-  }
-  return { url: outcome.url };
+  const stored = await renderAndStore(post.summary, input.renderer, input.store);
+  setPostImage(input.postId, stored);
+  logger.info("card re-rendered", { postId: input.postId, url: stored.url });
+  return { url: stored.url };
 }
 
-async function renderAndStore(
+type PlaceOutcome =
+  | { status: "rendered" | "reused"; url: string }
+  | { status: "failed"; error: string };
+
+async function placeCard(
   postId: string,
   summary: string,
   renderer: CardRenderer,
   store: ImageStore,
-): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+): Promise<PlaceOutcome> {
+  const key = cardKey(summary, renderer.contentType());
   try {
+    const alreadyStored = await store.find(key);
+    if (alreadyStored) {
+      setPostImage(postId, alreadyStored);
+      logger.info("card reused", { postId, url: alreadyStored.url });
+      return { status: "reused", url: alreadyStored.url };
+    }
+
     const bytes = await renderer.render(summary);
-    const stored = await store.put(cardKey(postId), bytes, renderer.contentType());
+    const stored = await store.put(key, bytes, renderer.contentType());
     setPostImage(postId, stored);
-    logger.info("card stored", { postId, url: stored.url });
-    return { ok: true, url: stored.url };
+    logger.info("card rendered", { postId, url: stored.url });
+    return { status: "rendered", url: stored.url };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     setPostImageError(postId, message);
     logger.error("card failed", { postId, error: message });
-    return { ok: false, error: message };
+    return { status: "failed", error: message };
   }
 }
 
-function cardKey(postId: string): string {
-  return `cards/${postId}.${loadEnv().CARD_IMAGE_FORMAT}`;
+async function renderAndStore(
+  summary: string,
+  renderer: CardRenderer,
+  store: ImageStore,
+): Promise<StoredImage> {
+  const bytes = await renderer.render(summary);
+  return store.put(cardKey(summary, renderer.contentType()), bytes, renderer.contentType());
+}
+
+/** Content-addressed: same design + format + summary → same key → one render, ever. */
+function cardKey(summary: string, contentType: string): string {
+  const env = loadEnv();
+  const digest = createHash("sha256")
+    .update(`${env.IMEJIS_DESIGN_ID}:${contentType}:${summary}`)
+    .digest("hex");
+  return `cards/${digest}.${env.CARD_IMAGE_FORMAT}`;
 }

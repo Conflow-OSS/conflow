@@ -5,7 +5,9 @@ export interface StoredImage {
   key: string;
 }
 
-/** Somewhere to put a rendered card. One implementation for now (MinIO). */
+/** Somewhere to keep rendered cards. MinIO or local disk. */
 export interface ImageStore {
   put(key: string, body: Buffer, contentType: string): Promise<StoredImage>;
+  /** the stored image at `key`, or null if nothing is there yet */
+  find(key: string): Promise<StoredImage | null>;
 }

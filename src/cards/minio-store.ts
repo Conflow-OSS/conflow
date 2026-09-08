@@ -1,6 +1,7 @@
 import {
   CreateBucketCommand,
   HeadBucketCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -38,7 +39,20 @@ export class MinioImageStore implements ImageStore {
     await this.client.send(
       new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType }),
     );
-    return { url: `${this.publicUrlBase}/${this.bucket}/${key}`, key };
+    return { url: this.urlFor(key), key };
+  }
+
+  async find(key: string): Promise<StoredImage | null> {
+    try {
+      await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      return { url: this.urlFor(key), key };
+    } catch {
+      return null;
+    }
+  }
+
+  private urlFor(key: string): string {
+    return `${this.publicUrlBase}/${this.bucket}/${key}`;
   }
 
   private async ensureBucket(): Promise<void> {
