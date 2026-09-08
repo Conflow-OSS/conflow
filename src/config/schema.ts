@@ -41,6 +41,8 @@ export const EnvSchema = z.object({
   IMEJIS_DESIGN_ID: z.string().min(1).default("sbOUjiAfOhsl7UfKBtuqU"),
   CARD_IMAGE_FORMAT: z.enum(["png", "jpeg", "webp"]).default("png"),
   CARD_BATCH_LIMIT: z.coerce.number().int().positive().default(10),
+  IMAGE_STORE: z.enum(["minio", "disk"]).default("minio"),
+  CARD_DIR: z.string().min(1).default("./data/cards"),
 
   // object storage (MinIO / any S3-compatible)
   S3_ENDPOINT: z.string().url().optional(),
