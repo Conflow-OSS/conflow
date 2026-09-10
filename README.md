@@ -159,17 +159,17 @@ run left `running` is marked `failed`; the posts it already produced stay usable
 ```
 src/
   config/     env schema + loader (zod)
-  store/      db, migrate, runs, topics, posts, vec
+  store/      db, migrate, runs, topics, posts (incl. changePostApproval), vec
   embeddings/ voyage client
   models/     ContentModel interface, zai + vertex adapters, factory
   prompt/     system.md, task-context/generate/regenerate.md, goldens/, assemble.ts
   pipeline/   inputs, expand, plan, generate, parse, dedup, run, regenerate
   cards/      imejis client, ImageStore interface, MinioImageStore, run
   export/     markdown + json writers + buildRunExport
-  core/       errors, posts-service, job-queue — shared by CLI / API / worker
-  api/        express app, auth, error middleware, routes/
-  worker/     BullMQ worker — handlers (generate, regenerate) + boot recovery
-  util/       ids, cosine, logger, retry, http, slug
+  queue/      the job-queue port (enqueue / inspect a job) — BullMQ; used by api + worker
+  api/        express app, auth, error middleware, routes/  (one process)
+  worker/     BullMQ worker — handlers (generate, regenerate) + boot recovery  (another process)
+  util/       ids, cosine, logger, retry, http, errors, slug
   cli.ts      command wiring
 test/         offline unit tests (vitest)
 topics/ stories/  input files for the generate flows

@@ -1,7 +1,7 @@
 /**
- * Errors that the service layer throws and the API turns into HTTP responses.
- * Each one carries the status code the API should send. The CLI just lets them
- * bubble up as ordinary errors.
+ * Errors the store and pipeline throw when a request can't be honoured. Each
+ * carries the HTTP status the API should send; the CLI just lets them surface
+ * as ordinary errors. (Transport-level HTTP errors live in `http.ts`.)
  */
 
 export class DomainError extends Error {

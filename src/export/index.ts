@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { loadEnv } from "../config/load.js";
-import { NotFoundError } from "../core/errors.js";
+import { NotFoundError } from "../util/errors.js";
 import { migrate } from "../store/migrate.js";
 import { listByRun } from "../store/posts.js";
 import { getRun } from "../store/runs.js";

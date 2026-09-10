@@ -1,3 +1,4 @@
+import { ConflictError, NotFoundError } from "../util/errors.js";
 import { newId } from "../util/ids.js";
 import { getDb } from "./db.js";
 import type {
@@ -157,6 +158,34 @@ export function setApproval(id: string, approval: Approval): void {
       approval,
       approvedAt: approval === "approved" ? new Date().toISOString() : null,
     });
+}
+
+export interface ApprovalChange {
+  post: PostRow;
+  /** Set when the post was approved despite being flagged. */
+  warning?: string;
+}
+
+/**
+ * Change one post's approval, enforcing the rules the CLI and the API share:
+ * a superseded post can't be approved, and approving a flagged post is allowed
+ * but handed back as a warning. Callers run `migrate()` first.
+ */
+export function changePostApproval(postId: string, approval: Approval): ApprovalChange {
+  const post = getPost(postId);
+  if (!post) {
+    throw new NotFoundError(`no post with id ${postId}`);
+  }
+  if (post.status === "regenerated") {
+    throw new ConflictError(`post ${postId} was already replaced — approve its replacement instead`);
+  }
+
+  const flagged = post.status === "flag_dup" || post.status === "flag_length";
+  const warning =
+    approval === "approved" && flagged ? `post is ${post.status} — approved anyway` : undefined;
+
+  setApproval(postId, approval);
+  return { post: getPost(postId) as PostRow, warning };
 }
 
 /** Approve every pending post in a run. Skips flagged posts unless includeFlagged. */

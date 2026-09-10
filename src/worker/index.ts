@@ -1,6 +1,6 @@
 import { type Job, Worker } from "bullmq";
 import { loadEnv } from "../config/load.js";
-import { getRedisConnection, QUEUE_NAME } from "../core/job-queue.js";
+import { getRedisConnection, QUEUE_NAME } from "../queue/queue.js";
 import { closeDb } from "../store/db.js";
 import { migrate } from "../store/migrate.js";
 import { logger } from "../util/logger.js";

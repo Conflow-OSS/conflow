@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import type { RequestHandler } from "express";
-import { UnauthorizedError } from "../core/errors.js";
+import { UnauthorizedError } from "../util/errors.js";
 
 /** Rejects any request whose `Authorization: Bearer <token>` does not match. */
 export function bearerAuth(expectedToken: string): RequestHandler {

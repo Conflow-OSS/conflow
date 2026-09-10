@@ -1,4 +1,4 @@
-import { NotFoundError } from "../core/errors.js";
+import { NotFoundError } from "../util/errors.js";
 import { getModel } from "../models/factory.js";
 import { regeneratePost } from "../pipeline/regenerate.js";
 import { runGenerationForRun } from "../pipeline/run.js";

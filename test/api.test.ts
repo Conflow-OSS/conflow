@@ -24,7 +24,7 @@ const readJob = vi.fn(
   }),
 );
 
-vi.mock("../src/core/job-queue.js", () => ({
+vi.mock("../src/queue/queue.js", () => ({
   enqueueJob: (...args: [string]) => enqueueJob(...args),
   readJob: (...args: [string]) => readJob(...args),
   pingRedis: async () => true,

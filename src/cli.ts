@@ -169,8 +169,9 @@ program
   });
 
 async function setPostApprovalFromCli(postId: string, approval: Approval): Promise<void> {
-  const { changePostApproval } = await import("./core/posts-service.js");
+  const { changePostApproval } = await import("./store/posts.js");
   try {
+    migrate();
     const { warning } = changePostApproval(postId, approval);
     if (warning) logger.warn(`post ${postId}: ${warning}`);
     process.stdout.write(`${postId} → ${approval}\n`);

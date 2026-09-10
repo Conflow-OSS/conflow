@@ -1,6 +1,6 @@
 import type { ErrorRequestHandler, RequestHandler } from "express";
 import { ZodError } from "zod";
-import { DomainError } from "../core/errors.js";
+import { DomainError } from "../util/errors.js";
 import { logger } from "../util/logger.js";
 
 /** Final handler for any request that matched no route. */

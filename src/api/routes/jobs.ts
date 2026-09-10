@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { NotFoundError } from "../../core/errors.js";
-import { readJob } from "../../core/job-queue.js";
+import { NotFoundError } from "../../util/errors.js";
+import { readJob } from "../../queue/queue.js";
 
 export const jobsRouter = Router();
 

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { pingRedis } from "../../core/job-queue.js";
+import { pingRedis } from "../../queue/queue.js";
 import { getDb } from "../../store/db.js";
 
 export const healthRouter = Router();

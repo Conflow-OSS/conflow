@@ -1,8 +1,7 @@
 import { Router } from "express";
-import { BadRequestError, ConflictError, NotFoundError } from "../../core/errors.js";
-import { enqueueJob } from "../../core/job-queue.js";
-import { changePostApproval } from "../../core/posts-service.js";
-import { getPost } from "../../store/posts.js";
+import { enqueueJob } from "../../queue/queue.js";
+import { changePostApproval, getPost } from "../../store/posts.js";
+import { BadRequestError, ConflictError, NotFoundError } from "../../util/errors.js";
 import { approvalBody, parseOrThrow } from "../validators.js";
 
 export const postsRouter = Router();

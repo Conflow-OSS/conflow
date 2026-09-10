@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { BadRequestError } from "../core/errors.js";
+import { BadRequestError } from "../util/errors.js";
 
 /** Parse `data` against `schema`, turning a failure into a 400 with a readable message. */
 export function parseOrThrow<Schema extends z.ZodTypeAny>(
