@@ -41,6 +41,7 @@ export const EnvSchema = z.object({
   API_HOST: z.string().min(1).default("127.0.0.1"),
   API_TOKEN: z.string().min(1).optional(),
   API_CORS_ORIGIN: z.string().min(1).default("*"),
+  SSE_MAX_DURATION_MS: z.coerce.number().int().positive().default(60 * 60 * 1000),
 
   // job queue (BullMQ) + worker
   REDIS_URL: z.string().min(1).default("redis://localhost:6379"),

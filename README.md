@@ -160,6 +160,11 @@ Run lifecycle: `queued` → `running` → `completed` / `failed` (on `run.status
 with `run.progress_json` updated as posts land). A worker crash mid-job is
 BullMQ's problem to notice (stalled-job detection), not the app's — nothing
 sweeps the DB on boot. The posts a crashed run already produced stay usable.
+That detection needs *some* worker process running its periodic stalled-job
+check, though — if the only worker is killed and never restarted, nothing is
+left to ever notice, and the run just sits at `running` until a worker comes
+back (at which point its own stalled check reconciles it, possibly by
+redelivering the job — see "if generation gets interrupted" below).
 
 `GET /v1/runs/:id/events` is push (SSE + a 15s heartbeat), not polling, and is
 scoped to the run's **generation** job only — a card batch on the same run
@@ -168,7 +173,23 @@ not the source of truth: the client still renders from `GET /v1/runs/:id`, and
 on reconnect just re-fetches (events that fired during a disconnect aren't
 replayed — there's no event log, by design). A run with no live job to track
 (created by the CLI, which runs synchronously, not queued) gets one
-`event: unavailable` and the stream closes.
+`event: unavailable` and the stream closes. The connection also has a hard
+ceiling — `SSE_MAX_DURATION_MS` (default 60min) — after which it sends
+`event: timeout` and closes rather than waiting forever for a result that, if
+the worker died with nothing left to notice, will never come.
+
+### If generation gets interrupted
+
+A worker that's killed (crash, `Ctrl-C` force-kill, the machine sleeping long
+enough that BullMQ's lock renewal falls behind and the lock expires) leaves
+its in-flight job's row at `run.status = "running"`. Nothing auto-fails it —
+restart the worker and BullMQ's own stalled-job check reconciles it, typically
+by **redelivering the job**, which re-runs the whole matrix loop from scratch
+on that run. That's not silent duplication — the dedup layer flags most of the
+re-generated posts as near-duplicates of the first attempt's — but it is
+wasted model spend. On a laptop, `caffeinate -i npm run worker:dev` (macOS)
+keeps the machine from sleeping mid-run and avoids this entirely; it isn't a
+concern on an always-on server/container.
 
 ## Layout
 

@@ -10,6 +10,7 @@ process.env.EMBED_DIM = "8";
 process.env.API_TOKEN = "test-token";
 process.env.IMAGE_STORE = "disk";
 process.env.CARD_DIR = join(workDir, "cards");
+process.env.SSE_MAX_DURATION_MS = "300"; // short on purpose — see the "times out" SSE test
 process.env.LOG_LEVEL = "error";
 
 const enqueueJob = vi.fn(async (type: string) => ({ jobId: `job-${type}` }));
@@ -427,6 +428,27 @@ describe("GET /v1/runs/:id/events", () => {
     expect(res.status).toBe(200);
     expect(res.text).toContain("event: progress");
     expect(res.text).toContain("event: completed");
+  });
+
+  it("times out and closes when the job never settles (SSE_MAX_DURATION_MS=300 in this suite)", async () => {
+    const run = insertRun({
+      flow: "matrix",
+      config: {},
+      input_kind: "topic_list",
+      status: "running",
+    });
+    setRunJobId(run.id, "job-stuck");
+
+    const res = await new Promise<request.Response>((resolve, reject) => {
+      request(app)
+        .get(`/v1/runs/${run.id}/events`)
+        .set(auth)
+        .end((err, r) => (err ? reject(err) : resolve(r)));
+    });
+
+    // No handler was ever invoked — the connection had to close on its own.
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("event: timeout");
   });
 });
 

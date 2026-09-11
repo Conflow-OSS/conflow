@@ -177,16 +177,33 @@ runsRouter.get("/runs/:id/events", (req, res) => {
     },
   });
 
-  // Runs once whether it's triggered by the job settling (below) or by the
-  // client disconnecting (req.on("close"), which also fires as a side effect
-  // of the res.end() the first path calls — the guard makes that explicit
-  // instead of relying on clearInterval/off/end each happening to be safe to
-  // call twice.
+  // A hard ceiling on how long this connection waits, independent of whether
+  // the job's own outcome ever arrives. The heartbeat defeats idle-timeouts
+  // upstream, but nothing before this bounded the connection itself — a job
+  // whose worker died with nothing left running to ever notice (no worker
+  // process at all means BullMQ's own stalled-job check never runs either)
+  // would otherwise sit here forever: open socket, live timer, live Redis
+  // listener, for a result that will never come. This ends it and tells the
+  // client to fall back to a plain GET — same reconnect-and-catch-up pattern
+  // as any other disconnect.
+  const maxDuration = setTimeout(() => {
+    send("timeout", {
+      reason: "no result within the max SSE session duration — poll GET /v1/runs/:id",
+    });
+    cleanup();
+  }, loadEnv().SSE_MAX_DURATION_MS);
+
+  // Runs once whether it's triggered by the job settling (above), the max
+  // duration elapsing, or the client disconnecting (req.on("close"), which
+  // also fires as a side effect of the res.end() the other paths call — the
+  // guard makes that explicit instead of relying on clearInterval/off/end
+  // each happening to be safe to call twice.
   let closed = false;
   function cleanup(): void {
     if (closed) return;
     closed = true;
     clearInterval(heartbeat);
+    clearTimeout(maxDuration);
     unsubscribe();
     res.end();
   }
