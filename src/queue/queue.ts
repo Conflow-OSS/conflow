@@ -1,4 +1,4 @@
-import { Queue } from "bullmq";
+import { Queue, QueueEvents } from "bullmq";
 import { Redis } from "ioredis";
 import { loadEnv } from "../config/load.js";
 
@@ -8,7 +8,8 @@ import { loadEnv } from "../config/load.js";
  * API routes or the worker handlers.
  */
 
-export type JobType = "generate" | "regenerate" | "cards" | "seed";
+// "cards" = a batch for a whole run; "card" = one post, re-rendered on demand.
+export type JobType = "generate" | "regenerate" | "cards" | "card" | "seed";
 
 export interface JobView {
   id: string;
@@ -65,6 +66,58 @@ export async function readJob(jobId: string): Promise<JobView | null> {
     error: job.failedReason || null,
     createdAt: job.timestamp ?? null,
     finishedAt: job.finishedOn ?? null,
+  };
+}
+
+let queueEvents: QueueEvents | null = null;
+
+/**
+ * One shared subscriber for the whole process. BullMQ duplicates the given
+ * connection internally for its own use, so this doesn't fight the Queue for
+ * the same socket. Sharing it (instead of one QueueEvents per SSE connection)
+ * matters once an API replica has many SSE clients open at once — one Redis
+ * subscription serves all of them; each connection just adds/removes its own
+ * listener, filtered to the job it cares about.
+ */
+function getQueueEvents(): QueueEvents {
+  if (!queueEvents) {
+    queueEvents = new QueueEvents(QUEUE_NAME, { connection: getRedisConnection() });
+  }
+  return queueEvents;
+}
+
+export interface JobEventHandlers {
+  onProgress?: (progress: unknown) => void;
+  onCompleted?: (result: unknown) => void;
+  onFailed?: (reason: string) => void;
+}
+
+/**
+ * Call `handlers` whenever BullMQ reports progress / completion / failure for
+ * `jobId`. Returns an unsubscribe function — always call it when the caller
+ * (an SSE connection) is done, or the listener leaks for the life of the process.
+ */
+export function subscribeToJob(jobId: string, handlers: JobEventHandlers): () => void {
+  const events = getQueueEvents();
+
+  const onProgress = ({ jobId: id, data }: { jobId: string; data: unknown }) => {
+    if (id === jobId) handlers.onProgress?.(data);
+  };
+  const onCompleted = ({ jobId: id, returnvalue }: { jobId: string; returnvalue: unknown }) => {
+    if (id === jobId) handlers.onCompleted?.(returnvalue);
+  };
+  const onFailed = ({ jobId: id, failedReason }: { jobId: string; failedReason: string }) => {
+    if (id === jobId) handlers.onFailed?.(failedReason);
+  };
+
+  events.on("progress", onProgress);
+  events.on("completed", onCompleted);
+  events.on("failed", onFailed);
+
+  return () => {
+    events.off("progress", onProgress);
+    events.off("completed", onCompleted);
+    events.off("failed", onFailed);
   };
 }
 

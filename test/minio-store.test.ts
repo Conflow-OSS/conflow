@@ -25,12 +25,17 @@ vi.mock("@aws-sdk/client-s3", () => {
         if (name === "HeadBucketCommand" && !bucketExists) throw new Error("NotFound");
         if (name === "CreateBucketCommand") bucketExists = true;
         if (name === "HeadObjectCommand" && !objectExists) throw new Error("NotFound");
+        if (name === "GetObjectCommand") {
+          if (!objectExists) throw new Error("NoSuchKey");
+          return { Body: { transformToByteArray: async () => new Uint8Array(Buffer.from("bytes")) } };
+        }
         return {};
       }
     },
     HeadBucketCommand: class extends FakeCommand {},
     CreateBucketCommand: class extends FakeCommand {},
     HeadObjectCommand: class extends FakeCommand {},
+    GetObjectCommand: class extends FakeCommand {},
     PutObjectCommand: class extends FakeCommand {},
     PutBucketPolicyCommand: class extends FakeCommand {},
   };
@@ -107,5 +112,17 @@ describe("MinioImageStore", () => {
     objectExists = false;
     const store = new MinioImageStore();
     expect(await store.find("cards/missing.png")).toBeNull();
+  });
+
+  it("get() returns the bytes when the object is present", async () => {
+    const store = new MinioImageStore();
+    const bytes = await store.get("cards/present.png");
+    expect(bytes).toEqual(Buffer.from("bytes"));
+  });
+
+  it("get() throws NotFoundError when the object is missing", async () => {
+    objectExists = false;
+    const store = new MinioImageStore();
+    await expect(store.get("cards/missing.png")).rejects.toThrow(/no card at/);
   });
 });

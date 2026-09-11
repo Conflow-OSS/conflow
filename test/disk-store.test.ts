@@ -34,4 +34,12 @@ describe("LocalDiskImageStore", () => {
     await store.put("cards/written.png", Buffer.from("x"), "image/png");
     expect(await store.find("cards/written.png")).toMatchObject({ key: "cards/written.png" });
   });
+
+  it("get() returns the bytes, and throws when nothing is there", async () => {
+    const store = new LocalDiskImageStore();
+    await expect(store.get("cards/missing.png")).rejects.toThrow(/no card at/);
+
+    await store.put("cards/present.png", Buffer.from("hello"), "image/png");
+    expect(await store.get("cards/present.png")).toEqual(Buffer.from("hello"));
+  });
 });

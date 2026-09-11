@@ -25,6 +25,7 @@ Full plan and the generation prompt:
 | M11 | Approval gate + Imejis image cards (MinIO) | ✅ |
 | M12a | HTTP API — skeleton + read/approve routes | ✅ |
 | M12b | Job queue (BullMQ) + worker process + `POST /runs` | ✅ |
+| M12c | Card jobs + seed endpoint + SSE progress | ✅ |
 
 ## Run book
 
@@ -145,14 +146,29 @@ GET  /v1/runs/:id/export?format=md|json   md = the _summary.md; json = full run
 GET  /v1/posts/:id
 PUT  /v1/posts/:id/approval               { approval: approved|rejected|pending }
 POST /v1/posts/:id/regenerate             -> 202 { jobId }
+POST /v1/posts/:id/card                   (re)render one post's card -> 202 { jobId }
+GET  /v1/posts/:id/card.png               streams the card's bytes from the image store
+
+POST /v1/runs/:id/cards                   { limit? } -> 202 { jobId }; batch, approved posts only
+POST /v1/seed                             { posts: [{ name, body }] } -> 202 { jobId }
 
 GET  /v1/jobs/:id                         { job: { state, progress, result, error } }
+GET  /v1/runs/:id/events                  SSE: progress/completed/failed for the run's generation job
 ```
 
 Run lifecycle: `queued` → `running` → `completed` / `failed` (on `run.status`,
-with `run.progress_json` updated as posts land). Cards, seed, and the SSE
-progress stream (`GET /v1/runs/:id/events`) come in M12c. On worker restart, a
-run left `running` is marked `failed`; the posts it already produced stay usable.
+with `run.progress_json` updated as posts land). A worker crash mid-job is
+BullMQ's problem to notice (stalled-job detection), not the app's — nothing
+sweeps the DB on boot. The posts a crashed run already produced stay usable.
+
+`GET /v1/runs/:id/events` is push (SSE + a 15s heartbeat), not polling, and is
+scoped to the run's **generation** job only — a card batch on the same run
+isn't relayed there, poll `GET /v1/jobs/:id` for that. The stream is a nudge,
+not the source of truth: the client still renders from `GET /v1/runs/:id`, and
+on reconnect just re-fetches (events that fired during a disconnect aren't
+replayed — there's no event log, by design). A run with no live job to track
+(created by the CLI, which runs synchronously, not queued) gets one
+`event: unavailable` and the stream closes.
 
 ## Layout
 
@@ -163,12 +179,12 @@ src/
   embeddings/ voyage client
   models/     ContentModel interface, zai + vertex adapters, factory
   prompt/     system.md, task-context/generate/regenerate.md, goldens/, assemble.ts
-  pipeline/   inputs, expand, plan, generate, parse, dedup, run, regenerate
-  cards/      imejis client, ImageStore interface, MinioImageStore, run
+  pipeline/   inputs, expand, plan, generate, parse, dedup, run, regenerate, seed
+  cards/      imejis client, ImageStore interface (put/find/get), MinioImageStore, disk store, run
   export/     markdown + json writers + buildRunExport
-  queue/      the job-queue port (enqueue / inspect a job) — BullMQ; used by api + worker
+  queue/      the job-queue port (enqueue / inspect / subscribe) — BullMQ; used by api + worker
   api/        express app, auth, error middleware, routes/  (one process)
-  worker/     BullMQ worker — handlers (generate, regenerate) + boot recovery  (another process)
+  worker/     BullMQ worker — handlers (generate, regenerate, cards, card, seed)  (another process)
   util/       ids, cosine, logger, retry, http, errors, slug
   cli.ts      command wiring
 test/         offline unit tests (vitest)

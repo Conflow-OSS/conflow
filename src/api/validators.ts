@@ -49,3 +49,13 @@ export const createRunBody = z
   .refine((body) => !(body.flow === "casestudy" && body.input.kind === "topics"), {
     message: "the casestudy flow needs a story, not a topic list",
   });
+
+export const cardsBatchBody = z.object({
+  limit: z.coerce.number().int().positive().optional(),
+});
+
+export const seedBody = z.object({
+  posts: z
+    .array(z.object({ name: z.string().min(1), body: z.string().min(1) }))
+    .min(1),
+});

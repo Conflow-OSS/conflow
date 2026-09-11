@@ -1,4 +1,6 @@
 import { Router } from "express";
+import { getImageStore } from "../../cards/factory.js";
+import { cardContentType } from "../../cards/imejis.js";
 import { enqueueJob } from "../../queue/queue.js";
 import { changePostApproval, getPost } from "../../store/posts.js";
 import { BadRequestError, ConflictError, NotFoundError } from "../../util/errors.js";
@@ -34,4 +36,31 @@ postsRouter.post("/posts/:id/regenerate", async (req, res) => {
 
   const { jobId } = await enqueueJob("regenerate", { postId: post.id });
   res.status(202).json({ jobId });
+});
+
+postsRouter.post("/posts/:id/card", async (req, res) => {
+  const post = getPost(req.params.id);
+  if (!post) {
+    throw new NotFoundError(`no post with id ${req.params.id}`);
+  }
+  if (!post.summary) {
+    throw new BadRequestError(`post ${req.params.id} has no summary to put on a card`);
+  }
+
+  const { jobId } = await enqueueJob("card", { postId: post.id });
+  res.status(202).json({ jobId });
+});
+
+postsRouter.get("/posts/:id/card.png", async (req, res) => {
+  const post = getPost(req.params.id);
+  if (!post) {
+    throw new NotFoundError(`no post with id ${req.params.id}`);
+  }
+  if (!post.image_key) {
+    throw new NotFoundError(`post ${req.params.id} has no card yet`);
+  }
+
+  const bytes = await getImageStore().get(post.image_key);
+  res.set("Cache-Control", "public, max-age=31536000, immutable");
+  res.type(cardContentType()).send(bytes);
 });

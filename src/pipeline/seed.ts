@@ -11,6 +11,12 @@ import { logger } from "../util/logger.js";
 /** Below this code-point count a seed post is treated as short-form. */
 const SHORT_MAX = 700;
 
+export interface SeedDoc {
+  /** a name for logging/reporting — a filename for the CLI, whatever the caller likes for the API */
+  file: string;
+  body: string;
+}
+
 export interface SeedResult {
   removed: number;
   added: number;
@@ -25,10 +31,6 @@ export interface SeedResult {
  * so editing or removing a file is reflected on the next run.
  */
 export async function seedCorpus(dir: string): Promise<SeedResult> {
-  const env = loadEnv();
-  requireVoyage(env);
-  migrate();
-
   if (!existsSync(dir) || !statSync(dir).isDirectory()) {
     throw new Error(`not a directory: ${dir}`);
   }
@@ -42,8 +44,20 @@ export async function seedCorpus(dir: string): Promise<SeedResult> {
     .map((f) => ({ file: f, body: readFileSync(join(dir, f), "utf8").trim() }))
     .filter((d) => d.body.length > 0);
 
+  return seedDocuments(docs);
+}
+
+/**
+ * The same re-import, from documents already in memory — what the API/worker
+ * use, since a request body has no filesystem path to read from.
+ */
+export async function seedDocuments(docs: SeedDoc[]): Promise<SeedResult> {
+  const env = loadEnv();
+  requireVoyage(env);
+  migrate();
+
   if (docs.length === 0) {
-    logger.warn("no seed files found", { dir });
+    logger.warn("no seed documents given");
     return { removed: 0, added: 0, files: [], short: 0, long: 0 };
   }
 

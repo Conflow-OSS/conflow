@@ -9,6 +9,7 @@ import { healthRouter } from "./routes/health.js";
 import { jobsRouter } from "./routes/jobs.js";
 import { postsRouter } from "./routes/posts.js";
 import { runsRouter } from "./routes/runs.js";
+import { seedRouter } from "./routes/seed.js";
 import { statsRouter } from "./routes/stats.js";
 
 /** Build the Express app. Kept separate from `server.ts` so tests can drive it in-process. */
@@ -29,6 +30,7 @@ export function createApp(): Express {
   v1.use(runsRouter);
   v1.use(postsRouter);
   v1.use(jobsRouter);
+  v1.use(seedRouter);
   v1.use(statsRouter);
   app.use("/v1", v1);
 

@@ -8,6 +8,8 @@ const workDir = mkdtempSync(join(tmpdir(), "content-engine-api-"));
 process.env.DB_PATH = join(workDir, "api.db");
 process.env.EMBED_DIM = "8";
 process.env.API_TOKEN = "test-token";
+process.env.IMAGE_STORE = "disk";
+process.env.CARD_DIR = join(workDir, "cards");
 process.env.LOG_LEVEL = "error";
 
 const enqueueJob = vi.fn(async (type: string) => ({ jobId: `job-${type}` }));
@@ -24,20 +26,41 @@ const readJob = vi.fn(
   }),
 );
 
+interface JobEventHandlers {
+  onProgress?: (progress: unknown) => void;
+  onCompleted?: (result: unknown) => void;
+  onFailed?: (reason: string) => void;
+}
+let subscribed: { jobId: string; handlers: JobEventHandlers } | null = null;
+let notifySubscribed: (() => void) | null = null;
+const subscribeToJob = vi.fn((jobId: string, handlers: JobEventHandlers) => {
+  subscribed = { jobId, handlers };
+  notifySubscribed?.();
+  return vi.fn(); // unsubscribe
+});
+/** Resolves once the route under test has called subscribeToJob. */
+function waitForSubscription(): Promise<void> {
+  return new Promise((resolve) => {
+    notifySubscribed = resolve;
+  });
+}
+
 vi.mock("../src/queue/queue.js", () => ({
   enqueueJob: (...args: [string]) => enqueueJob(...args),
   readJob: (...args: [string]) => readJob(...args),
+  subscribeToJob: (...args: [string, JobEventHandlers]) => subscribeToJob(...args),
   pingRedis: async () => true,
 }));
 
 const { createApp } = await import("../src/api/app.js");
 const { migrate } = await import("../src/store/migrate.js");
-const { insertRun } = await import("../src/store/runs.js");
+const { insertRun, setRunJobId } = await import("../src/store/runs.js");
 const { insertTopic } = await import("../src/store/topics.js");
-const { insertPost, setStatus } = await import("../src/store/posts.js");
+const { insertPost, setStatus, setPostImage } = await import("../src/store/posts.js");
 const { getRun } = await import("../src/store/runs.js");
 const { closeDb } = await import("../src/store/db.js");
 const { getDb } = await import("../src/store/db.js");
+const { LocalDiskImageStore } = await import("../src/cards/disk-store.js");
 
 migrate();
 const app = createApp();
@@ -82,6 +105,9 @@ beforeEach(() => {
   getDb().exec("DELETE FROM posts; DELETE FROM topics; DELETE FROM runs; DELETE FROM vec_posts;");
   enqueueJob.mockClear();
   readJob.mockClear();
+  subscribeToJob.mockClear();
+  subscribed = null;
+  notifySubscribed = null;
 });
 
 afterAll(() => {
@@ -264,6 +290,143 @@ describe("posts", () => {
     const res = await request(app).post(`/v1/posts/${ok.id}/regenerate`).set(auth);
     expect(res.status).toBe(409);
     expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it("queues a card render for a post with a summary", async () => {
+    const { ok } = seedRun();
+    const res = await request(app).post(`/v1/posts/${ok.id}/card`).set(auth);
+    expect(res.status).toBe(202);
+    expect(res.body.jobId).toBe("job-card");
+    expect(enqueueJob).toHaveBeenCalledWith("card", { postId: ok.id });
+  });
+
+  it("400s a card render for a post with no summary", async () => {
+    const run = insertRun({ flow: "matrix", config: {}, input_kind: "topic_list" });
+    const post = insertPost({
+      kind: "generated",
+      run_id: run.id,
+      format: "long",
+      body: "a".repeat(1000),
+      summary: null,
+      status: "ok",
+    });
+    const res = await request(app).post(`/v1/posts/${post.id}/card`).set(auth);
+    expect(res.status).toBe(400);
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it("serves the card image from the store", async () => {
+    const { ok } = seedRun();
+    const stored = await new LocalDiskImageStore().put(
+      "cards/test.png",
+      Buffer.from("fake-png-bytes"),
+      "image/png",
+    );
+    setPostImage(ok.id, stored);
+
+    const res = await request(app).get(`/v1/posts/${ok.id}/card.png`).set(auth);
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/image\/png/);
+    expect(res.body).toEqual(Buffer.from("fake-png-bytes"));
+  });
+
+  it("404s the card image when the post has none yet", async () => {
+    const { ok } = seedRun();
+    const res = await request(app).get(`/v1/posts/${ok.id}/card.png`).set(auth);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /v1/runs/:id/cards", () => {
+  it("queues a card batch for the run", async () => {
+    const { run } = seedRun();
+    const res = await request(app).post(`/v1/runs/${run.id}/cards`).set(auth).send({ limit: 5 });
+    expect(res.status).toBe(202);
+    expect(res.body.jobId).toBe("job-cards");
+    expect(enqueueJob).toHaveBeenCalledWith("cards", { runId: run.id, limit: 5 });
+  });
+
+  it("404s for an unknown run", async () => {
+    const res = await request(app).post("/v1/runs/nope/cards").set(auth).send({});
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /v1/seed", () => {
+  it("queues a seed job with the given posts", async () => {
+    const res = await request(app)
+      .post("/v1/seed")
+      .set(auth)
+      .send({ posts: [{ name: "one.md", body: "a post" }] });
+    expect(res.status).toBe(202);
+    expect(res.body.jobId).toBe("job-seed");
+    expect(enqueueJob).toHaveBeenCalledWith("seed", {
+      posts: [{ name: "one.md", body: "a post" }],
+    });
+  });
+
+  it("400s an empty posts list", async () => {
+    const res = await request(app).post("/v1/seed").set(auth).send({ posts: [] });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /v1/runs/:id/events", () => {
+  it("404s an unknown run", async () => {
+    const res = await request(app).get("/v1/runs/nope/events").set(auth);
+    expect(res.status).toBe(404);
+  });
+
+  it("sends a terminal event immediately for an already-finished run, no subscription", async () => {
+    const { run } = seedRun(); // seedRun() creates status: "completed"
+    const res = await request(app).get(`/v1/runs/${run.id}/events`).set(auth);
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/text\/event-stream/);
+    expect(res.text).toContain("event: completed");
+    expect(subscribeToJob).not.toHaveBeenCalled();
+  });
+
+  it("reports 'unavailable' for a running CLI-created run with no job_id", async () => {
+    const run = insertRun({
+      flow: "matrix",
+      config: {},
+      input_kind: "topic_list",
+      status: "running",
+    });
+    const res = await request(app).get(`/v1/runs/${run.id}/events`).set(auth);
+    expect(res.text).toContain("event: unavailable");
+    expect(subscribeToJob).not.toHaveBeenCalled();
+  });
+
+  it("relays progress then completion from the subscribed job, and closes", async () => {
+    const run = insertRun({
+      flow: "matrix",
+      config: {},
+      input_kind: "topic_list",
+      status: "running",
+    });
+    setRunJobId(run.id, "job-xyz");
+
+    // supertest/superagent doesn't dispatch until .end()/.then() — call .end()
+    // explicitly so the request is actually in flight before we wait on it,
+    // since we need the server to reach subscribeToJob() before we drive it.
+    const reqPromise = new Promise<request.Response>((resolve, reject) => {
+      request(app)
+        .get(`/v1/runs/${run.id}/events`)
+        .set(auth)
+        .end((err, res) => (err ? reject(err) : resolve(res)));
+    });
+
+    await waitForSubscription();
+    expect(subscribed?.jobId).toBe("job-xyz");
+
+    subscribed!.handlers.onProgress?.({ phase: "generating", postsCreated: 1, postsExpected: 4 });
+    subscribed!.handlers.onCompleted?.({ postsCreated: 4 });
+
+    const res = await reqPromise;
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("event: progress");
+    expect(res.text).toContain("event: completed");
   });
 });
 

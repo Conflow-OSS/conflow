@@ -10,4 +10,6 @@ export interface ImageStore {
   put(key: string, body: Buffer, contentType: string): Promise<StoredImage>;
   /** the stored image at `key`, or null if nothing is there yet */
   find(key: string): Promise<StoredImage | null>;
+  /** the raw bytes at `key`. Throws NotFoundError if there's nothing there. */
+  get(key: string): Promise<Buffer>;
 }

@@ -1,5 +1,6 @@
 import {
   CreateBucketCommand,
+  GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
   PutBucketPolicyCommand,
@@ -7,6 +8,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { loadEnv } from "../config/load.js";
+import { NotFoundError } from "../util/errors.js";
 import { logger } from "../util/logger.js";
 import type { ImageStore, StoredImage } from "./image-store.js";
 
@@ -51,6 +53,16 @@ export class MinioImageStore implements ImageStore {
       return { url: this.urlFor(key), key };
     } catch {
       return null;
+    }
+  }
+
+  async get(key: string): Promise<Buffer> {
+    try {
+      const response = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+      const bytes = await response.Body!.transformToByteArray();
+      return Buffer.from(bytes);
+    } catch {
+      throw new NotFoundError(`no card at ${key}`);
     }
   }
 

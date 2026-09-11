@@ -65,7 +65,8 @@ through two shared stores:
     │                        │                     │  job → "completed"  │                     │
     │                        │                     │<────────────────────│                     │
     │                        │                     │                     │                     │
-    │ GET /v1/runs/:id  (poll, or SSE in M12c)     │                     │                     │
+    │ GET /v1/runs/:id  (poll — or GET /v1/runs/:id/events, SSE, pushes the │
+    │  same nudge instead of the client asking)    │                     │                     │
     │───────────────────────>│ read run + posts ────────────────────────────────────────────-->│
     │  {run:{status:"completed"…}, counts, …}      │                     │                     │
     │<───────────────────────│                     │                     │                     │
@@ -92,7 +93,10 @@ Cloud Tasks) does not:
    `failed`), progress, return value, and failure reason all live in Redis
    hashes. That's what `GET /v1/jobs/:id` reads.
 3. **Pub/sub events** — `job.updateProgress()` and completion publish on a Redis
-   channel. A `QueueEvents` subscriber (M12c, for SSE) gets them live.
+   channel. `queue/queue.ts`'s `subscribeToJob()` wraps one shared `QueueEvents`
+   subscriber per API process; `GET /v1/runs/:id/events` relays it as SSE. One
+   Redis subscription serves every SSE client the replica has open — each
+   connection just adds/removes its own filtered listener.
 4. **Stalled-job recovery** — the worker renews a lock every `stalledInterval`
    (~30s). If the worker dies, the lock expires and the next worker re-queues the
    job (or fails it after `maxStalledCount`).
@@ -199,6 +203,6 @@ In every case, `pipeline/` and `store/` don't move.
 |---|---|
 | generation throws mid-run | `runGenerationForRun` catches → `setRunStatus(failed, message)`; posts already created stay in the DB and are usable; BullMQ marks the job `failed` |
 | model creds missing (throws before the run starts) | `handleGenerate`'s outer try/catch still marks the run `failed` |
-| worker process crashes | on restart, `failOrphanedRuns()` marks any run stuck at `running` as `failed`; BullMQ re-queues the in-flight job (stalled-job recovery) |
+| worker process crashes | no app-level boot sweep — a fresh worker replica can't tell "abandoned by a dead worker" from "another live replica is still on it", so it doesn't guess. Recovery is entirely BullMQ's stalled-job detection: the lock the dead worker stopped renewing expires, and the job is redelivered (or `failed` after `maxStalledCount`) regardless of how many replicas exist. Note: `generate` isn't resumable, so a redelivered run re-does the whole matrix loop — the dedup layer flags most of the re-generated posts as near-duplicates rather than silently doubling content, but it is wasted LLM spend |
 | API + worker migrate a fresh DB at the same moment | `busy_timeout` (set before the WAL pragma) makes the second writer wait; `addColumnIfMissing` tolerates "duplicate column"; the `embed_dim` insert is `OR IGNORE` |
 | Redis down | `POST /v1/runs` fails (can't enqueue); all `GET` routes still work; `/health` reports `redis: "error"` but `ok: true` |

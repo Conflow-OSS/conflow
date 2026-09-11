@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { loadEnv } from "../config/load.js";
+import { NotFoundError } from "../util/errors.js";
 import type { ImageStore, StoredImage } from "./image-store.js";
 
 /**
@@ -18,6 +19,14 @@ export class LocalDiskImageStore implements ImageStore {
   async find(key: string): Promise<StoredImage | null> {
     const filePath = this.pathFor(key);
     return existsSync(filePath) ? { url: `file://${filePath}`, key } : null;
+  }
+
+  async get(key: string): Promise<Buffer> {
+    const filePath = this.pathFor(key);
+    if (!existsSync(filePath)) {
+      throw new NotFoundError(`no card at ${key}`);
+    }
+    return readFileSync(filePath);
   }
 
   private pathFor(key: string): string {

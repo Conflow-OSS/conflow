@@ -43,6 +43,12 @@ class FakeStore implements ImageStore {
   async find(key: string): Promise<StoredImage | null> {
     return this.objects.has(key) ? { url: `https://cdn.example/${key}`, key } : null;
   }
+
+  async get(key: string): Promise<Buffer> {
+    const bytes = this.objects.get(key);
+    if (!bytes) throw new Error(`no card at ${key}`);
+    return bytes;
+  }
 }
 
 let runId: string;

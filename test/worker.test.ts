@@ -10,6 +10,9 @@ process.env.EMBED_DIM = "16";
 process.env.GEN_X = "2";
 process.env.GEN_Y = "1";
 process.env.GEN_Z = "2";
+process.env.CARD_BATCH_LIMIT = "10";
+process.env.IMAGE_STORE = "disk";
+process.env.CARD_DIR = join(workDir, "cards");
 process.env.LOG_LEVEL = "error";
 
 vi.mock("../src/embeddings/voyage.js", async () => {
@@ -26,6 +29,32 @@ vi.mock("../src/models/factory.js", () => ({
     if (!model.current) throw new Error("model credentials are missing");
     return model.current;
   },
+}));
+
+// handlers.ts wiring is what's under test here, not card rendering or seeding
+// themselves — those are covered in test/cards-run.test.ts and test/seed.test.ts.
+const generateCardsForRun = vi.fn(async (_input: unknown) => ({
+  attempted: 0,
+  rendered: 0,
+  reused: 0,
+  failed: 0,
+}));
+const generateOneCard = vi.fn(async (_input: unknown) => ({ url: "https://cdn.example/card.png" }));
+vi.mock("../src/cards/run.js", () => ({
+  generateCardsForRun: (...args: [unknown]) => generateCardsForRun(...args),
+  generateOneCard: (...args: [unknown]) => generateOneCard(...args),
+  imejisRenderer: { render: vi.fn(), contentType: () => "image/png" },
+}));
+
+const seedDocuments = vi.fn(async (docs: Array<{ file: string; body: string }>) => ({
+  removed: 0,
+  added: docs.length,
+  files: docs.map((d) => d.file),
+  short: docs.length,
+  long: 0,
+}));
+vi.mock("../src/pipeline/seed.js", () => ({
+  seedDocuments: (...args: [Array<{ file: string; body: string }>]) => seedDocuments(...args),
 }));
 
 const { handleJob } = await import("../src/worker/handlers.js");
@@ -72,6 +101,9 @@ function fakeJob(name: string, data: unknown) {
 beforeEach(() => {
   getDb().exec("DELETE FROM posts; DELETE FROM topics; DELETE FROM runs; DELETE FROM vec_posts;");
   model.current = makeFakeModel();
+  generateCardsForRun.mockClear();
+  generateOneCard.mockClear();
+  seedDocuments.mockClear();
 });
 
 afterAll(() => {
@@ -183,5 +215,40 @@ describe("handleJob — regenerate", () => {
 describe("handleJob — unknown type", () => {
   it("throws", async () => {
     await expect(handleJob(fakeJob("dance", {}))).rejects.toThrow(/unknown job type/);
+  });
+});
+
+describe("handleJob — cards", () => {
+  it("renders a batch for the run, falling back to CARD_BATCH_LIMIT when no limit is given", async () => {
+    await handleJob(fakeJob("cards", { runId: "run-1" }));
+    expect(generateCardsForRun).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: "run-1", limit: 10 }),
+    );
+  });
+
+  it("uses the limit from the job payload when given", async () => {
+    await handleJob(fakeJob("cards", { runId: "run-1", limit: 3 }));
+    expect(generateCardsForRun).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: "run-1", limit: 3 }),
+    );
+  });
+});
+
+describe("handleJob — card", () => {
+  it("re-renders one post's card", async () => {
+    await handleJob(fakeJob("card", { postId: "post-1" }));
+    expect(generateOneCard).toHaveBeenCalledWith(expect.objectContaining({ postId: "post-1" }));
+  });
+});
+
+describe("handleJob — seed", () => {
+  it("passes the posts through as seed documents", async () => {
+    await handleJob(
+      fakeJob("seed", { posts: [{ name: "a.md", body: "hello" }, { name: "b.md", body: "world" }] }),
+    );
+    expect(seedDocuments).toHaveBeenCalledWith([
+      { file: "a.md", body: "hello" },
+      { file: "b.md", body: "world" },
+    ]);
   });
 });
