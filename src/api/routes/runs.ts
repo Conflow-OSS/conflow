@@ -177,7 +177,15 @@ runsRouter.get("/runs/:id/events", (req, res) => {
     },
   });
 
+  // Runs once whether it's triggered by the job settling (below) or by the
+  // client disconnecting (req.on("close"), which also fires as a side effect
+  // of the res.end() the first path calls — the guard makes that explicit
+  // instead of relying on clearInterval/off/end each happening to be safe to
+  // call twice.
+  let closed = false;
   function cleanup(): void {
+    if (closed) return;
+    closed = true;
     clearInterval(heartbeat);
     unsubscribe();
     res.end();
