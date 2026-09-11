@@ -200,8 +200,11 @@ a web review dashboard, and a performance feedback loop. See the plan artifact.
 
 ## Authenticate Vertex AI
 
+```sh
+bash <(curl -sSL https://storage.googleapis.com/cloud-samples-data/adc/setup_adc.sh)
 ```
-bash <(curl -sSL \                                                     
-https://storage.googleapis.com/cloud-samples-data/adc/setup_adc.sh)
 
-```
+(Keep this on one line if you copy it by hand — a backslash line-continuation
+with trailing whitespace after it silently breaks when pasted into a
+terminal: the shell doesn't treat it as a continuation, curl gets a malformed
+argument, and the URL on the next line runs as its own bare command.)
