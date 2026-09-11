@@ -29,7 +29,6 @@ vi.mock("../src/models/factory.js", () => ({
 }));
 
 const { handleJob } = await import("../src/worker/handlers.js");
-const { failOrphanedRuns } = await import("../src/worker/recovery.js");
 const { migrate } = await import("../src/store/migrate.js");
 const { insertRun, getRun } = await import("../src/store/runs.js");
 const { insertTopic } = await import("../src/store/topics.js");
@@ -184,27 +183,5 @@ describe("handleJob — regenerate", () => {
 describe("handleJob — unknown type", () => {
   it("throws", async () => {
     await expect(handleJob(fakeJob("dance", {}))).rejects.toThrow(/unknown job type/);
-  });
-});
-
-describe("failOrphanedRuns", () => {
-  it("fails runs still marked running, leaving others alone", () => {
-    const running = insertRun({
-      flow: "matrix",
-      config: {},
-      input_kind: "topic_list",
-      status: "running",
-    });
-    const queued = insertRun({
-      flow: "matrix",
-      config: {},
-      input_kind: "topic_list",
-      status: "queued",
-    });
-
-    expect(failOrphanedRuns()).toBe(1);
-    expect(getRun(running.id)!.status).toBe("failed");
-    expect(getRun(running.id)!.error).toMatch(/restarted/);
-    expect(getRun(queued.id)!.status).toBe("queued");
   });
 });

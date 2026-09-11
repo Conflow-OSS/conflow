@@ -51,10 +51,6 @@ export function listRuns(limit: number, offset: number): RunRow[] {
     .all(limit, offset) as RunRow[];
 }
 
-export function runsWithStatus(status: RunStatus): RunRow[] {
-  return getDb().prepare(`SELECT * FROM runs WHERE status = ?`).all(status) as RunRow[];
-}
-
 export function setRunStatus(id: string, status: RunStatus, error?: string | null): void {
   getDb()
     .prepare(`UPDATE runs SET status = @status, error = @error WHERE id = @id`)

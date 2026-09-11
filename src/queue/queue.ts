@@ -10,6 +10,17 @@ import { loadEnv } from "../config/load.js";
 
 export type JobType = "generate" | "regenerate" | "cards" | "seed";
 
+export interface JobView {
+  id: string;
+  type: string;
+  state: string;
+  progress: unknown;
+  result: unknown;
+  error: string | null;
+  createdAt: number | null;
+  finishedAt: number | null;
+}
+
 export const QUEUE_NAME = "content-jobs";
 
 let connection: Redis | null = null;
@@ -41,17 +52,6 @@ export async function enqueueJob(
   return { jobId: job.id ?? "" };
 }
 
-export interface JobView {
-  id: string;
-  type: string;
-  state: string;
-  progress: unknown;
-  result: unknown;
-  error: string | null;
-  createdAt: number | null;
-  finishedAt: number | null;
-}
-
 export async function readJob(jobId: string): Promise<JobView | null> {
   const job = await getQueue().getJob(jobId);
   if (!job) return null;
@@ -81,11 +81,4 @@ export async function pingRedis(): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-export async function closeQueue(): Promise<void> {
-  await queue?.close();
-  await connection?.quit();
-  queue = null;
-  connection = null;
 }

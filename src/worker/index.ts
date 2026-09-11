@@ -5,11 +5,16 @@ import { closeDb } from "../store/db.js";
 import { migrate } from "../store/migrate.js";
 import { logger } from "../util/logger.js";
 import { handleJob } from "./handlers.js";
-import { failOrphanedRuns } from "./recovery.js";
 
 const env = loadEnv();
 migrate();
-failOrphanedRuns();
+
+// No boot-time "fail anything stuck at running" sweep here on purpose — with
+// more than one worker replica, a fresh replica's sweep can't tell "abandoned
+// by a dead worker" from "another live replica is genuinely still on it".
+// Crash recovery is BullMQ's job: a worker that dies mid-job stops renewing
+// its lock, BullMQ's stalled-job detection notices, and the job is redelivered
+// (or failed after maxStalledCount) independent of which/how many replicas exist.
 
 const worker = new Worker(QUEUE_NAME, (job: Job) => handleJob(job), {
   connection: getRedisConnection(),
