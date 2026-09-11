@@ -42,7 +42,10 @@ export function createApp(): Express {
 const requestLogger: express.RequestHandler = (req, res, next) => {
   const startedAt = Date.now();
   res.on("finish", () => {
-    logger.debug("api request", {
+    // info, not debug: an access log is something you want by default, not
+    // only when LOG_LEVEL=debug. The timestamp is automatic — every log line
+    // carries one (see util/logger.ts's emit()).
+    logger.info("api request", {
       method: req.method,
       path: req.path,
       status: res.statusCode,
