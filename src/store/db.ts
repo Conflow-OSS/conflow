@@ -1,32 +1,32 @@
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
-import Database from "better-sqlite3";
-import * as sqliteVec from "sqlite-vec";
+import postgres from "postgres";
 import { loadEnv } from "../config/load.js";
+import { logger } from "../util/logger.js";
 
-let handle: Database.Database | null = null;
+export type Sql = postgres.Sql;
+/** What a plain pool connection and a transaction's scoped connection have in
+ *  common — the shape functions that might run inside a transaction should
+ *  accept (see insertPost/upsertEmbedding), since a transaction's sql isn't a
+ *  full Sql (no .end(), etc.). */
+export type Queryable = postgres.ISql;
 
-/** Open (once) the SQLite database with the sqlite-vec extension loaded. */
-export function getDb(): Database.Database {
-  if (handle) return handle;
-  const env = loadEnv();
-  mkdirSync(dirname(env.DB_PATH), { recursive: true });
+let sql: Sql | null = null;
 
-  const db = new Database(env.DB_PATH);
-  // Set this first: the API server, the worker, and the occasional CLI command
-  // all open this same file, and even switching on WAL needs a brief exclusive
-  // lock. With the timeout a contended writer waits up to 5s instead of failing
-  // with SQLITE_BUSY.
-  db.pragma("busy_timeout = 5000");
-  db.pragma("journal_mode = WAL");
-  db.pragma("foreign_keys = ON");
-  sqliteVec.load(db);
-
-  handle = db;
-  return db;
+/** The Postgres connection pool (created once, lazily, on first use). */
+export function getDb(): Sql {
+  if (!sql) {
+    const env = loadEnv();
+    sql = postgres(env.DATABASE_URL, {
+      max: env.DB_POOL_MAX,
+      // migrate() is idempotent CREATE/ALTER ... IF NOT EXISTS, run on every
+      // process boot — Postgres logs a NOTICE for each no-op, which is just
+      // noise here, not a warning worth surfacing the way logger.warn is.
+      onnotice: (notice) => logger.debug("postgres notice", { message: notice.message }),
+    });
+  }
+  return sql;
 }
 
-export function closeDb(): void {
-  handle?.close();
-  handle = null;
+export async function closeDb(): Promise<void> {
+  await sql?.end();
+  sql = null;
 }

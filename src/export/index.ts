@@ -1,10 +1,10 @@
 import { join } from "node:path";
 import { loadEnv } from "../config/load.js";
-import { NotFoundError } from "../util/errors.js";
 import { migrate } from "../store/migrate.js";
 import { listByRun } from "../store/posts.js";
 import { getRun } from "../store/runs.js";
 import { listTopicsByRun } from "../store/topics.js";
+import { NotFoundError } from "../util/errors.js";
 import { buildJsonExport, writeJsonExport } from "./json.js";
 import { buildMarkdownSummary, writeMarkdownExport } from "./markdown.js";
 
@@ -16,16 +16,16 @@ export interface ExportResult {
 }
 
 /** Write a run's posts to `<EXPORT_DIR>/<run_id>/`. Works on partial runs too. */
-export function exportRun(runId: string, format: ExportFormat): ExportResult {
-  migrate();
+export async function exportRun(runId: string, format: ExportFormat): Promise<ExportResult> {
+  await migrate();
 
-  const run = getRun(runId);
+  const run = await getRun(runId);
   if (!run) {
     throw new Error(`no run with id ${runId}`);
   }
 
-  const posts = listByRun(runId);
-  const topicById = new Map(listTopicsByRun(runId).map((topic) => [topic.id, topic]));
+  const posts = await listByRun(runId);
+  const topicById = new Map((await listTopicsByRun(runId)).map((topic) => [topic.id, topic]));
   const outDir = join(loadEnv().EXPORT_DIR, runId);
 
   if (format === "json") {
@@ -43,18 +43,18 @@ export interface RunExportPayload {
 }
 
 /** A run's export as an in-memory payload — the API returns this instead of writing files. */
-export function buildRunExport(runId: string, format: ExportFormat): RunExportPayload {
-  migrate();
+export async function buildRunExport(runId: string, format: ExportFormat): Promise<RunExportPayload> {
+  await migrate();
 
-  const run = getRun(runId);
+  const run = await getRun(runId);
   if (!run) {
     throw new NotFoundError(`no run with id ${runId}`);
   }
 
-  const posts = listByRun(runId);
+  const posts = await listByRun(runId);
 
   if (format === "json") {
-    const topicById = new Map(listTopicsByRun(runId).map((topic) => [topic.id, topic]));
+    const topicById = new Map((await listTopicsByRun(runId)).map((topic) => [topic.id, topic]));
     return {
       filename: `${runId}.json`,
       contentType: "application/json; charset=utf-8",

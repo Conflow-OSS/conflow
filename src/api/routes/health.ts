@@ -12,7 +12,7 @@ export const healthRouter = Router();
 healthRouter.get("/health", async (_req, res) => {
   let db = "ok";
   try {
-    getDb().prepare("SELECT 1").get();
+    await getDb()`SELECT 1`;
   } catch {
     db = "error";
   }

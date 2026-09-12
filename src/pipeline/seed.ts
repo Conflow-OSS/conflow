@@ -54,7 +54,7 @@ export async function seedCorpus(dir: string): Promise<SeedResult> {
 export async function seedDocuments(docs: SeedDoc[]): Promise<SeedResult> {
   const env = loadEnv();
   requireVoyage(env);
-  migrate();
+  await migrate();
 
   if (docs.length === 0) {
     logger.warn("no seed documents given");
@@ -62,34 +62,33 @@ export async function seedDocuments(docs: SeedDoc[]): Promise<SeedResult> {
   }
 
   const vectors = await embedDocuments(docs.map((d) => d.body));
+  const sql = getDb();
 
-  const db = getDb();
-  const write = db.transaction(() => {
-    const seedIds = (
-      db.prepare(`SELECT id FROM posts WHERE kind = 'seed'`).all() as Array<{ id: string }>
-    ).map((r) => r.id);
+  const { removed, short, long } = await sql.begin(async (tx) => {
+    const seedRows = await tx<Array<{ id: string }>>`SELECT id FROM posts WHERE kind = 'seed'`;
+    const seedIds = seedRows.map((r) => r.id);
 
     if (seedIds.length > 0) {
-      const ph = seedIds.map(() => "?").join(",");
-      db.prepare(`UPDATE posts SET dup_of_id = NULL WHERE dup_of_id IN (${ph})`).run(...seedIds);
-      db.prepare(`DELETE FROM vec_posts WHERE post_id IN (${ph})`).run(...seedIds);
-      db.prepare(`DELETE FROM posts WHERE kind = 'seed'`).run();
+      // Embeddings live on the posts row itself now, so deleting the seed
+      // rows takes their vectors with them — no separate table to clean up.
+      await tx`UPDATE posts SET dup_of_id = NULL WHERE dup_of_id = ANY(${tx.array(seedIds)})`;
+      await tx`DELETE FROM posts WHERE kind = 'seed'`;
     }
 
     let short = 0;
     let long = 0;
-    docs.forEach((d, i) => {
-      const format = charCount(d.body) <= SHORT_MAX ? "short" : "long";
+    for (let i = 0; i < docs.length; i++) {
+      const doc = docs[i]!;
+      const format = charCount(doc.body) <= SHORT_MAX ? "short" : "long";
       if (format === "short") short++;
       else long++;
-      const post = insertPost({ kind: "seed", format, body: d.body });
-      upsertEmbedding(post.id, vectors[i]!);
-    });
+      const post = await insertPost({ kind: "seed", format, body: doc.body }, tx);
+      await upsertEmbedding(post.id, vectors[i]!, tx);
+    }
 
     return { removed: seedIds.length, short, long };
   });
 
-  const { removed, short, long } = write();
   const result: SeedResult = { removed, added: docs.length, files: docs.map((d) => d.file), short, long };
   logger.info("seed complete", result);
   return result;

@@ -3,16 +3,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContentModel, GenerateArgs } from "../src/models/types.js";
+import { resetTestTables, useTestDatabase } from "./support/test-db.js";
 
-const workDir = mkdtempSync(join(tmpdir(), "content-engine-worker-"));
-process.env.DB_PATH = join(workDir, "worker.db");
-process.env.EMBED_DIM = "16";
+const cardDir = mkdtempSync(join(tmpdir(), "content-engine-worker-cards-"));
+useTestDatabase();
 process.env.GEN_X = "2";
 process.env.GEN_Y = "1";
 process.env.GEN_Z = "2";
 process.env.CARD_BATCH_LIMIT = "10";
 process.env.IMAGE_STORE = "disk";
-process.env.CARD_DIR = join(workDir, "cards");
+process.env.CARD_DIR = cardDir;
 process.env.LOG_LEVEL = "error";
 
 vi.mock("../src/embeddings/voyage.js", async () => {
@@ -62,9 +62,9 @@ const { migrate } = await import("../src/store/migrate.js");
 const { insertRun, getRun } = await import("../src/store/runs.js");
 const { insertTopic } = await import("../src/store/topics.js");
 const { insertPost } = await import("../src/store/posts.js");
-const { getDb, closeDb } = await import("../src/store/db.js");
+const { closeDb } = await import("../src/store/db.js");
 
-migrate();
+await migrate();
 
 function makeFakeModel(): ContentModel {
   return {
@@ -98,22 +98,22 @@ function fakeJob(name: string, data: unknown) {
   return { name, data, updateProgress: vi.fn(async (_progress: unknown) => {}) };
 }
 
-beforeEach(() => {
-  getDb().exec("DELETE FROM posts; DELETE FROM topics; DELETE FROM runs; DELETE FROM vec_posts;");
+beforeEach(async () => {
+  await resetTestTables();
   model.current = makeFakeModel();
   generateCardsForRun.mockClear();
   generateOneCard.mockClear();
   seedDocuments.mockClear();
 });
 
-afterAll(() => {
-  closeDb();
-  rmSync(workDir, { recursive: true, force: true });
+afterAll(async () => {
+  await closeDb();
+  rmSync(cardDir, { recursive: true, force: true });
 });
 
 describe("handleJob — generate", () => {
   it("runs a queued topic-list run to completion and reports progress", async () => {
-    const run = insertRun({
+    const run = await insertRun({
       flow: "matrix",
       config: { postsPerAngle: 2 },
       input_kind: "topic_list",
@@ -125,7 +125,7 @@ describe("handleJob — generate", () => {
     const result = (await handleJob(job)) as { postsCreated: number };
 
     expect(result.postsCreated).toBe(4); // 2 topics x 1 angle x 2 posts
-    expect(getRun(run.id)!.status).toBe("completed");
+    expect((await getRun(run.id))!.status).toBe("completed");
     expect(job.updateProgress).toHaveBeenCalled();
 
     const lastProgress = job.updateProgress.mock.calls.at(-1)?.[0];
@@ -141,7 +141,7 @@ describe("handleJob — generate", () => {
       },
     };
 
-    const run = insertRun({
+    const run = await insertRun({
       flow: "matrix",
       config: {},
       input_kind: "topic_list",
@@ -150,7 +150,7 @@ describe("handleJob — generate", () => {
     });
 
     await expect(handleJob(fakeJob("generate", { runId: run.id }))).rejects.toThrow("model exploded");
-    const failed = getRun(run.id)!;
+    const failed = (await getRun(run.id))!;
     expect(failed.status).toBe("failed");
     expect(failed.error).toMatch(/model exploded/);
   });
@@ -161,7 +161,7 @@ describe("handleJob — generate", () => {
 
   it("marks the run failed when the model can't even be constructed", async () => {
     model.current = null;
-    const run = insertRun({
+    const run = await insertRun({
       flow: "matrix",
       config: {},
       input_kind: "topic_list",
@@ -170,27 +170,27 @@ describe("handleJob — generate", () => {
     });
 
     await expect(handleJob(fakeJob("generate", { runId: run.id }))).rejects.toThrow(/credentials/);
-    expect(getRun(run.id)!.status).toBe("failed");
+    expect((await getRun(run.id))!.status).toBe("failed");
   });
 });
 
 describe("handleJob — regenerate", () => {
   it("replaces a flagged post", async () => {
-    const run = insertRun({
+    const run = await insertRun({
       flow: "matrix",
       config: { postsPerAngle: 2 },
       input_kind: "topic_list",
       input_text: "kubernetes",
       status: "completed",
     });
-    const topic = insertTopic({
+    const topic = await insertTopic({
       run_id: run.id,
       base_text: "kubernetes",
       base_index: 0,
       angle_text: "an angle",
       angle_index: 0,
     });
-    const post = insertPost({
+    const post = await insertPost({
       kind: "generated",
       run_id: run.id,
       topic_id: topic.id,

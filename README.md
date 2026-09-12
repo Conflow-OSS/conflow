@@ -11,7 +11,7 @@ Full plan and the generation prompt:
 | Milestone | What | State |
 |---|---|---|
 | M1 | Scaffold | ✅ |
-| M2 | Store layer (SQLite + sqlite-vec) | ✅ |
+| M2 | Store layer (originally SQLite + sqlite-vec, migrated to Postgres + pgvector in M13) | ✅ |
 | M3 | Embeddings (Voyage) + `seed` command | ✅ |
 | M4 | Model adapters (Z.ai / Vertex) + `test-model` + voice eval | ✅ |
 | M5 | Prompt assembly (`assemblePrompt`) | ✅ |
@@ -26,18 +26,20 @@ Full plan and the generation prompt:
 | M12a | HTTP API — skeleton + read/approve routes | ✅ |
 | M12b | Job queue (BullMQ) + worker process + `POST /runs` | ✅ |
 | M12c | Card jobs + seed endpoint + SSE progress | ✅ |
+| M13 | Postgres + pgvector — SQLite/sqlite-vec fully retired | ✅ |
 
 ## Run book
 
 ```sh
 # 1. one-time setup
 npm install
+docker compose up -d postgres             # + redis, minio when you need the API/worker
 cp .env.example .env
 #    - set VOYAGE_API_KEY
 #    - MODEL_CHANNEL=vertex  -> `gcloud auth application-default login`, set VERTEX_PROJECT
 #    - MODEL_CHANNEL=zai     -> set ZAI_API_KEY
-npm test                                  # all offline, no API calls
-npm run dev -- migrate                    # create ./data/content.db
+npm test                                  # needs postgres (content_engine_test) — see below
+npm run dev -- migrate                    # create the schema in content_engine
 
 # 2. seed the voice reference (your own hand-written posts, one per file)
 npm run dev -- seed ./seed/posts
@@ -196,7 +198,7 @@ concern on an always-on server/container.
 ```
 src/
   config/     env schema + loader (zod)
-  store/      db, migrate, runs, topics, posts (incl. changePostApproval), vec
+  store/      db (Postgres pool), migrate, runs, topics, posts (incl. changePostApproval), vec
   embeddings/ voyage client
   models/     ContentModel interface, zai + vertex adapters, factory
   prompt/     system.md, task-context/generate/regenerate.md, goldens/, assemble.ts
@@ -211,8 +213,23 @@ src/
 test/         offline unit tests (vitest)
 topics/ stories/  input files for the generate flows
 seed/posts/   hand-written posts, one per file
-data/         SQLite db + exports  (git-ignored)
+data/         exports + local card storage  (git-ignored) — the DB itself is in Postgres now
 ```
+
+## Database
+
+Postgres + [pgvector](https://github.com/pgvector/pgvector) — `docker-compose.yml`'s
+`postgres` service (`pgvector/pgvector:pg16`) creates both `content_engine`
+(the app) and `content_engine_test` (the test suite) the first time it starts
+on a fresh volume. `migrate()` is still hand-rolled, idempotent
+`CREATE ... IF NOT EXISTS` DDL run on every boot (API, worker, and CLI
+`migrate` all call it) — no separate migration tool. The embedding lives as a
+real `vector(EMBED_DIM)` column directly on `posts` (no sidecar table the way
+SQLite's `vec0` virtual table needed one).
+
+`npm test` needs `docker compose up -d postgres` — every test file shares the
+one `content_engine_test` database (vitest runs test files sequentially, so
+this is safe) and clears its own tables on start.
 
 ## Out of Phase 1
 

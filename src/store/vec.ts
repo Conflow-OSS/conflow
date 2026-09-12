@@ -1,57 +1,72 @@
-import { getDb } from "./db.js";
+import { getDb, type Queryable } from "./db.js";
 
 /**
- * sqlite-vec stores vectors and answers nearest-neighbour queries. It does NOT
- * create embeddings — every vector here came from a Voyage API call upstream.
+ * The embedding lives on `posts.embedding` (a pgvector column), not a
+ * sidecar table — Postgres, unlike SQLite, has a real vector column type, so
+ * there's no need for a virtual table to bolt one on. This module stays a
+ * thin wrapper around that column so nothing outside it has to know that.
  */
 
-/** vec0 virtual tables reject UPSERT, so replace explicitly. */
-export function upsertEmbedding(postId: string, embedding: readonly number[]): void {
-  const db = getDb();
-  const write = db.transaction((id: string, vec: string) => {
-    db.prepare(`DELETE FROM vec_posts WHERE post_id = ?`).run(id);
-    db.prepare(`INSERT INTO vec_posts (post_id, embedding) VALUES (?, ?)`).run(id, vec);
-  });
-  write(postId, JSON.stringify(embedding));
+/** pgvector's text format is exactly `[0.1,0.2,...]` — also valid JSON, conveniently. */
+function toVectorLiteral(embedding: readonly number[]): string {
+  return `[${embedding.join(",")}]`;
 }
 
-export function getEmbedding(postId: string): number[] | null {
-  const row = getDb()
-    .prepare(`SELECT vec_to_json(embedding) AS j FROM vec_posts WHERE post_id = ?`)
-    .get(postId) as { j: string } | undefined;
-  return row ? (JSON.parse(row.j) as number[]) : null;
+function fromVectorLiteral(literal: string): number[] {
+  return JSON.parse(literal) as number[];
 }
 
-export function getEmbeddings(postIds: readonly string[]): Map<string, number[]> {
+/** `db` defaults to the pool — `pipeline/seed.ts` passes a transaction's scoped connection instead. */
+export async function upsertEmbedding(
+  postId: string,
+  embedding: readonly number[],
+  db: Queryable = getDb(),
+): Promise<void> {
+  await db`UPDATE posts SET embedding = ${toVectorLiteral(embedding)}::vector WHERE id = ${postId}`;
+}
+
+export async function getEmbedding(postId: string): Promise<number[] | null> {
+  const sql = getDb();
+  const [row] = await sql<Array<{ embedding: string | null }>>`
+    SELECT embedding FROM posts WHERE id = ${postId}
+  `;
+  return row?.embedding ? fromVectorLiteral(row.embedding) : null;
+}
+
+export async function getEmbeddings(postIds: readonly string[]): Promise<Map<string, number[]>> {
   const out = new Map<string, number[]>();
   if (postIds.length === 0) return out;
-  const placeholders = postIds.map(() => "?").join(",");
-  const rows = getDb()
-    .prepare(
-      `SELECT post_id, vec_to_json(embedding) AS j FROM vec_posts
-        WHERE post_id IN (${placeholders})`,
-    )
-    .all(...postIds) as Array<{ post_id: string; j: string }>;
-  for (const r of rows) out.set(r.post_id, JSON.parse(r.j) as number[]);
+
+  const sql = getDb();
+  const rows = await sql<Array<{ id: string; embedding: string | null }>>`
+    SELECT id, embedding FROM posts WHERE id = ANY(${sql.array(postIds as string[])})
+  `;
+  for (const row of rows) {
+    if (row.embedding) out.set(row.id, fromVectorLiteral(row.embedding));
+  }
   return out;
 }
 
-/** KNN via the cosine metric declared on the table. similarity = 1 - distance. */
-export function nearest(
+/** KNN via pgvector's cosine-distance operator. similarity = 1 - distance. */
+export async function nearest(
   embedding: readonly number[],
   k: number,
-): Array<{ post_id: string; similarity: number }> {
-  const rows = getDb()
-    .prepare(
-      `SELECT post_id, distance FROM vec_posts
-        WHERE embedding MATCH ? AND k = ?
-        ORDER BY distance`,
-    )
-    .all(JSON.stringify(embedding), k) as Array<{ post_id: string; distance: number }>;
+): Promise<Array<{ post_id: string; similarity: number }>> {
+  const sql = getDb();
+  const rows = await sql<Array<{ post_id: string; distance: number }>>`
+    SELECT id AS post_id, embedding <=> ${toVectorLiteral(embedding)}::vector AS distance
+    FROM posts
+    WHERE embedding IS NOT NULL
+    ORDER BY distance
+    LIMIT ${k}
+  `;
   return rows.map((r) => ({ post_id: r.post_id, similarity: 1 - r.distance }));
 }
 
-export function countEmbeddings(): number {
-  const row = getDb().prepare(`SELECT COUNT(*) AS n FROM vec_posts`).get() as { n: number };
+export async function countEmbeddings(): Promise<number> {
+  const sql = getDb();
+  const [row] = await sql<[{ n: number }]>`
+    SELECT COUNT(*)::int AS n FROM posts WHERE embedding IS NOT NULL
+  `;
   return row.n;
 }

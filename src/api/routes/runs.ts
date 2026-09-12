@@ -25,8 +25,8 @@ import {
 export const runsRouter = Router();
 
 /** Look the run up or fail with a 404. */
-function requireRun(id: string): RunRow {
-  const run = getRun(id);
+async function requireRun(id: string): Promise<RunRow> {
+  const run = await getRun(id);
   if (!run) {
     throw new NotFoundError(`no run with id ${id}`);
   }
@@ -51,7 +51,7 @@ runsRouter.post("/runs", async (req, res) => {
   const inputText =
     body.input.kind === "topics" ? body.input.topics.join("\n") : body.input.text;
 
-  const run = insertRun({
+  const run = await insertRun({
     flow: body.flow,
     config: { anglesPerTopic: env.GEN_Y, postsPerAngle: env.GEN_Z, model: env.MODEL_ID },
     input_kind: inputKind,
@@ -60,40 +60,41 @@ runsRouter.post("/runs", async (req, res) => {
   });
 
   const { jobId } = await enqueueJob("generate", { runId: run.id });
-  setRunJobId(run.id, jobId);
+  await setRunJobId(run.id, jobId);
 
   res.status(202).json({ runId: run.id, jobId });
 });
 
 /** Post counts for a run, kept under their own key so they don't shadow `run.status`. */
-function runCounts(runId: string) {
-  return { status: countByStatus(runId), approval: countByApproval(runId) };
+async function runCounts(runId: string) {
+  const [status, approval] = await Promise.all([countByStatus(runId), countByApproval(runId)]);
+  return { status, approval };
 }
 
-runsRouter.get("/runs", (req, res) => {
+runsRouter.get("/runs", async (req, res) => {
   const { limit, offset } = parseOrThrow(runListQuery, req.query);
-  const runs = listRuns(limit, offset).map((run) => ({
-    run: withParsedConfig(run),
-    counts: runCounts(run.id),
-  }));
+  const rows = await listRuns(limit, offset);
+  const runs = await Promise.all(
+    rows.map(async (run) => ({ run: withParsedConfig(run), counts: await runCounts(run.id) })),
+  );
   res.json({ runs });
 });
 
-runsRouter.get("/runs/:id", (req, res) => {
-  const run = requireRun(req.params.id);
-  res.json({
-    run: withParsedConfig(run),
-    counts: runCounts(run.id),
-    topics: listTopicsByRun(run.id).length,
-    posts: listByRun(run.id).length,
-  });
+runsRouter.get("/runs/:id", async (req, res) => {
+  const run = await requireRun(req.params.id);
+  const [counts, topics, posts] = await Promise.all([
+    runCounts(run.id),
+    listTopicsByRun(run.id),
+    listByRun(run.id),
+  ]);
+  res.json({ run: withParsedConfig(run), counts, topics: topics.length, posts: posts.length });
 });
 
-runsRouter.get("/runs/:id/posts", (req, res) => {
-  const run = requireRun(req.params.id);
+runsRouter.get("/runs/:id/posts", async (req, res) => {
+  const run = await requireRun(req.params.id);
   const { status, approval } = parseOrThrow(postFilterQuery, req.query);
 
-  let posts = listByRun(run.id);
+  let posts = await listByRun(run.id);
   if (status === "ok") {
     posts = posts.filter((post) => post.status === "ok");
   } else if (status === "flagged") {
@@ -105,26 +106,26 @@ runsRouter.get("/runs/:id/posts", (req, res) => {
   res.json({ posts });
 });
 
-runsRouter.get("/runs/:id/topics", (req, res) => {
-  const run = requireRun(req.params.id);
-  res.json({ topics: listTopicsByRun(run.id) });
+runsRouter.get("/runs/:id/topics", async (req, res) => {
+  const run = await requireRun(req.params.id);
+  res.json({ topics: await listTopicsByRun(run.id) });
 });
 
-runsRouter.post("/runs/:id/approve-all", (req, res) => {
-  const run = requireRun(req.params.id);
+runsRouter.post("/runs/:id/approve-all", async (req, res) => {
+  const run = await requireRun(req.params.id);
   const { includeFlagged } = parseOrThrow(approveAllBody, req.body ?? {});
-  const approved = approvePendingInRun(run.id, includeFlagged);
+  const approved = await approvePendingInRun(run.id, includeFlagged);
   res.json({ approved });
 });
 
-runsRouter.get("/runs/:id/export", (req, res) => {
+runsRouter.get("/runs/:id/export", async (req, res) => {
   const { format } = parseOrThrow(exportQuery, req.query);
-  const payload = buildRunExport(req.params.id, format);
+  const payload = await buildRunExport(req.params.id, format);
   res.type(payload.contentType).send(payload.body);
 });
 
 runsRouter.post("/runs/:id/cards", async (req, res) => {
-  const run = requireRun(req.params.id);
+  const run = await requireRun(req.params.id);
   const { limit } = parseOrThrow(cardsBatchBody, req.body ?? {});
   const { jobId } = await enqueueJob("cards", { runId: run.id, limit });
   res.status(202).json({ jobId });
@@ -138,8 +139,8 @@ const HEARTBEAT_MS = 15_000;
  * for GET /runs/:id. Scoped to generation only; a card batch on this run is
  * not relayed here (poll GET /v1/jobs/:id for that) — see the M12c plan note.
  */
-runsRouter.get("/runs/:id/events", (req, res) => {
-  const run = requireRun(req.params.id);
+runsRouter.get("/runs/:id/events", async (req, res) => {
+  const run = await requireRun(req.params.id);
 
   res.writeHead(200, {
     "Content-Type": "text/event-stream",

@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ContentModel, GenerateArgs } from "../src/models/types.js";
+import { resetTestTables, useTestDatabase } from "./support/test-db.js";
 
 const workDir = mkdtempSync(join(tmpdir(), "content-engine-export-"));
-process.env.DB_PATH = join(workDir, "export.db");
+useTestDatabase();
 process.env.EXPORT_DIR = join(workDir, "exports");
-process.env.EMBED_DIM = "16";
 process.env.GEN_Y = "1";
 process.env.GEN_Z = "2";
 process.env.SHORT_FORM_RATIO = "0.5";
@@ -53,9 +53,13 @@ const fakeModel: ContentModel = {
   },
 };
 
+const { migrate } = await import("../src/store/migrate.js");
 const { runMatrixFlowFromTopicList } = await import("../src/pipeline/run.js");
 const { exportRun } = await import("../src/export/index.js");
 const { closeDb } = await import("../src/store/db.js");
+
+await migrate();
+await resetTestTables();
 
 let runId: string;
 
@@ -66,22 +70,22 @@ beforeAll(async () => {
   runId = result.runId;
 });
 
-afterAll(() => {
-  closeDb();
+afterAll(async () => {
+  await closeDb();
   rmSync(workDir, { recursive: true, force: true });
 });
 
 describe("exportRun — markdown", () => {
-  it("writes one file per post plus a summary", () => {
-    const result = exportRun(runId, "md");
+  it("writes one file per post plus a summary", async () => {
+    const result = await exportRun(runId, "md");
     const files = readdirSync(result.outDir);
 
     expect(files).toContain("_summary.md");
     expect(files.filter((name) => name !== "_summary.md")).toHaveLength(2);
   });
 
-  it("puts the lesson, summary and status in each post's front-matter", () => {
-    const result = exportRun(runId, "md");
+  it("puts the lesson, summary and status in each post's front-matter", async () => {
+    const result = await exportRun(runId, "md");
     const postFile = readdirSync(result.outDir).find((name) => name !== "_summary.md")!;
     const contents = readFileSync(join(result.outDir, postFile), "utf8");
 
@@ -92,8 +96,8 @@ describe("exportRun — markdown", () => {
     expect(contents).toMatch(/---\n\n[\s\S]+word/); // body follows the front-matter
   });
 
-  it("lists every post in the summary table", () => {
-    const result = exportRun(runId, "md");
+  it("lists every post in the summary table", async () => {
+    const result = await exportRun(runId, "md");
     const summary = readFileSync(join(result.outDir, "_summary.md"), "utf8");
     expect(summary).toContain(`# Run ${runId}`);
     expect(summary).toContain("| # | status | approval | format | hook | chars | lesson |");
@@ -102,8 +106,8 @@ describe("exportRun — markdown", () => {
 });
 
 describe("exportRun — json", () => {
-  it("writes a single posts.json with the run and its posts", () => {
-    const result = exportRun(runId, "json");
+  it("writes a single posts.json with the run and its posts", async () => {
+    const result = await exportRun(runId, "json");
     const payload = JSON.parse(readFileSync(join(result.outDir, "posts.json"), "utf8"));
 
     expect(payload.run.id).toBe(runId);
@@ -115,13 +119,13 @@ describe("exportRun — json", () => {
 });
 
 describe("exportRun — errors", () => {
-  it("throws for an unknown run id", () => {
-    expect(() => exportRun("nope", "md")).toThrow(/no run with id/);
+  it("throws for an unknown run id", async () => {
+    await expect(exportRun("nope", "md")).rejects.toThrow(/no run with id/);
   });
 
-  it("does not leave a directory behind for a failed export", () => {
+  it("does not leave a directory behind for a failed export", async () => {
     try {
-      exportRun("nope", "md");
+      await exportRun("nope", "md");
     } catch {
       // expected
     }

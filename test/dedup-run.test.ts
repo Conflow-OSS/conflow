@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ContentModel, GenerateArgs } from "../src/models/types.js";
+import { resetTestTables, useTestDatabase } from "./support/test-db.js";
 
 const workDir = mkdtempSync(join(tmpdir(), "content-engine-dedup-"));
-process.env.DB_PATH = join(workDir, "dedup.db");
-process.env.EMBED_DIM = "16";
+useTestDatabase();
 process.env.GEN_Y = "2";
 process.env.GEN_Z = "2";
 process.env.SHORT_FORM_RATIO = "0"; // all long, so identical markers give identical bodies
@@ -56,8 +56,12 @@ const identicalOutputModel: ContentModel = {
   },
 };
 
+const { migrate } = await import("../src/store/migrate.js");
 const { runMatrixFlowFromTopicList } = await import("../src/pipeline/run.js");
 const { getDb, closeDb } = await import("../src/store/db.js");
+
+await migrate();
+await resetTestTables();
 
 let runId: string;
 
@@ -68,24 +72,22 @@ beforeAll(async () => {
   runId = result.runId;
 });
 
-afterAll(() => {
-  closeDb();
+afterAll(async () => {
+  await closeDb();
   rmSync(workDir, { recursive: true, force: true });
 });
 
 describe("deduplication in a run", () => {
-  it("keeps the first variant of each angle and flags the identical second", () => {
-    const posts = getDb()
-      .prepare(
-        `SELECT variant_index, status, dup_of_id, dup_score FROM posts WHERE run_id = ?
-         ORDER BY topic_id, variant_index`,
-      )
-      .all(runId) as Array<{
-      variant_index: number;
-      status: string;
-      dup_of_id: string | null;
-      dup_score: number | null;
-    }>;
+  it("keeps the first variant of each angle and flags the identical second", async () => {
+    const posts = await getDb()<
+      Array<{
+        variant_index: number;
+        status: string;
+        dup_of_id: string | null;
+        dup_score: number | null;
+      }>
+    >`SELECT variant_index, status, dup_of_id, dup_score FROM posts WHERE run_id = ${runId}
+       ORDER BY topic_id, variant_index`;
 
     expect(posts).toHaveLength(4);
 
@@ -101,10 +103,10 @@ describe("deduplication in a run", () => {
     }
   });
 
-  it("does not flag across the two different angles", () => {
-    const flagReasons = getDb()
-      .prepare(`SELECT flag_reason FROM posts WHERE run_id = ? AND status = 'flag_dup'`)
-      .all(runId) as Array<{ flag_reason: string }>;
+  it("does not flag across the two different angles", async () => {
+    const flagReasons = await getDb()<Array<{ flag_reason: string }>>`
+      SELECT flag_reason FROM posts WHERE run_id = ${runId} AND status = 'flag_dup'
+    `;
     expect(flagReasons.every((row) => row.flag_reason.includes("sibling"))).toBe(true);
   });
 });

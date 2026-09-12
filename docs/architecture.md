@@ -13,7 +13,7 @@ over the same `pipeline/` · `store/` · `cards/` · `export/` code.
                               │  they all import:
              ┌────────────────┼────────────────┬───────────────┐
         pipeline/          store/           queue/          config/  util/
-        (generate,        (SQLite          (enqueue a       (env)   (errors,
+        (generate,        (Postgres        (enqueue a       (env)   (errors,
          dedup,             access)          job, read                logger…)
          regenerate)                         its status)
 ```
@@ -27,15 +27,15 @@ HTTP handler, or a queue worker.
 
 | process | command | what it is | talks to |
 |---|---|---|---|
-| **CLI** | `npm run dev -- <cmd>` | one-shot commands, exits when done | SQLite, model APIs |
-| **API** | `npm run api` | long-lived HTTP server; fast reads/writes inline, long jobs handed to the queue | SQLite, Redis |
-| **worker** | `npm run worker` | long-lived; pulls jobs off the queue and runs the pipeline | SQLite, Redis, model APIs |
+| **CLI** | `npm run dev -- <cmd>` | one-shot commands, exits when done | Postgres, model APIs |
+| **API** | `npm run api` | long-lived HTTP server; fast reads/writes inline, long jobs handed to the queue | Postgres, Redis |
+| **worker** | `npm run worker` | long-lived; pulls jobs off the queue and runs the pipeline | Postgres, Redis, model APIs |
 
 The API and the worker **never call each other**. Everything between them goes
 through two shared stores:
 
 - **Redis** (the queue) — "there is a job to do", plus its status/progress/result
-- **SQLite** — the actual data (runs, posts, embeddings); the run row also
+- **Postgres** — the actual data (runs, posts, embeddings); the run row also
   carries the job's lifecycle (`status`, `error`, `progress_json`)
 
 ---
@@ -43,7 +43,7 @@ through two shared stores:
 ## Lifecycle of a generation run
 
 ```
-  client                API (process 1)          Redis            worker (process 2)         SQLite
+  client                API (process 1)          Redis            worker (process 2)       Postgres
     │                        │                     │                     │                     │
     │ POST /v1/runs          │                     │                     │                     │
     │───────────────────────>│                     │                     │                     │
@@ -74,7 +74,7 @@ through two shared stores:
 
 Key point: the API's job after `POST /v1/runs` is **done in milliseconds**. It
 created a row, dropped a message, and returned. The worker picks the message up
-whenever it's free. The client learns the outcome by reading SQLite again
+whenever it's free. The client learns the outcome by reading Postgres again
 (`GET /v1/runs/:id`), not by holding the original request open.
 
 ---
@@ -111,9 +111,9 @@ HPA, Cloud Run min/max instances).
 
 ## Deployment topology
 
-Locally today: `docker compose up -d` runs **redis** + **minio**; the API and
-worker run on the host (`npm run api` / `npm run worker`) against a local SQLite
-file.
+Locally today: `docker compose up -d` runs **postgres** + **redis** + **minio**;
+the API and worker run on the host (`npm run api` / `npm run worker`) against
+that Postgres.
 
 For a real deployment, four containers / services:
 
@@ -129,21 +129,21 @@ For a real deployment, four containers / services:
                     │ (queue) │         │   — cards     │
                     └─────────┘         └──────────────┘
               ┌──────────┴──────────┐
-              │  SQL database        │  ⚠️ see below
+              │  postgres + pgvector │
               └─────────────────────┘
 ```
 
 - **redis** — a managed instance (Upstash, ElastiCache, MemoryStore) or its own
   container. It *is* "the queue server", and yes it is a separate container from
   the API and the worker.
-- **the database** — this is the one real blocker for multi-container. Today it's
-  a local SQLite file that all three processes `open()` directly. That only works
-  when they share a filesystem. Moving to containers means swapping
-  `better-sqlite3` for a network database: **Turso / libSQL** (near drop-in — it
-  keeps SQLite semantics) or Postgres. All DB access already funnels through
-  `store/`, so this is a contained change, but it is a change.
-- **api** and **worker** are both stateless once the DB is remote — run one of
-  each, or ten.
+- **the database** — was the one real blocker for multi-container: SQLite is a
+  local file that only works when every process shares a filesystem. Fixed by
+  the M13 migration to Postgres + pgvector, a real client-server database — a
+  managed instance (Cloud SQL, RDS, Supabase, Neon — anywhere pgvector is
+  enabled) is a drop-in swap for the local `docker-compose` one via
+  `DATABASE_URL`. All DB access funnels through `store/`, which is what made
+  this a contained rewrite rather than a scattered one.
+- **api** and **worker** are both stateless — run one of each, or ten.
 
 The worker's jobs run 20–40 min, which **exceeds AWS Lambda's 15-min ceiling**.
 So "serverless" for the worker realistically means Cloud Run / Fargate (a
@@ -207,5 +207,5 @@ In every case, `pipeline/` and `store/` don't move.
 | the *only* worker dies and nothing replaces it | stalled-job detection is itself run by an active `Worker`'s own periodic check — with zero workers alive, nothing is left to ever notice. The run sits at `running` forever until a worker restarts, at which point its stalled check reconciles the old job (see row above). A real deployment relies on the orchestrator (Cloud Run min-instances, k8s replica count) to replace a dead worker quickly; on a laptop this is why a long run should run under `caffeinate -i` — a machine sleep can starve BullMQ's own lock-renewal timer long enough for the lock to expire while the worker is still technically alive, producing repeated "could not renew lock" errors that never resolve on their own. `lockDuration` is set to 10 minutes (up from BullMQ's 30s default) to give real slack against exactly that |
 | a stuck job (or a hung `worker.close()`) blocks the worker from exiting on Ctrl-C | `SIGINT`/`SIGTERM` gives `worker.close()` `SHUTDOWN_GRACE_MS` (10s) to finish gracefully, then force-exits — Ctrl-C is never allowed to hang indefinitely |
 | a run's job never settles (worker dead, per above) and a client is watching `GET /v1/runs/:id/events` | the heartbeat keeps the *connection* from being idle-timed-out by proxies, but doesn't bound the *wait* — `SSE_MAX_DURATION_MS` (default 60min) does: the stream sends `event: timeout` and closes rather than holding an open socket, a live timer, and a Redis listener for a result that, with no worker left to produce one, will never come |
-| API + worker migrate a fresh DB at the same moment | `busy_timeout` (set before the WAL pragma) makes the second writer wait; `addColumnIfMissing` tolerates "duplicate column"; the `embed_dim` insert is `OR IGNORE` |
+| API + worker migrate a fresh DB at the same moment | Postgres handles concurrent DDL natively (real MVCC, not a single-writer file) — every statement in `migrate()` is `CREATE ... IF NOT EXISTS`, so two processes racing each other just both succeed. (This used to need a SQLite-specific `busy_timeout` + a tolerated "duplicate column" race before the M13 Postgres migration — Postgres doesn't need either.) |
 | Redis down | `POST /v1/runs` fails (can't enqueue); all `GET` routes still work; `/health` reports `redis: "error"` but `ok: true` |

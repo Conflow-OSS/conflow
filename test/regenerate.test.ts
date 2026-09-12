@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ContentModel, GenerateArgs } from "../src/models/types.js";
+import { resetTestTables, useTestDatabase } from "./support/test-db.js";
 
 const workDir = mkdtempSync(join(tmpdir(), "content-engine-regen-"));
-process.env.DB_PATH = join(workDir, "regen.db");
-process.env.EMBED_DIM = "16";
+useTestDatabase();
 process.env.GEN_Y = "1";
 process.env.GEN_Z = "2";
 process.env.SHORT_FORM_RATIO = "0";
@@ -50,10 +50,14 @@ const fakeModel: ContentModel = {
   },
 };
 
+const { migrate } = await import("../src/store/migrate.js");
 const { runMatrixFlowFromTopicList } = await import("../src/pipeline/run.js");
 const { regeneratePost } = await import("../src/pipeline/regenerate.js");
 const { getDb, closeDb } = await import("../src/store/db.js");
 const { getPost } = await import("../src/store/posts.js");
+
+await migrate();
+await resetTestTables();
 
 let firstPostId: string;
 
@@ -62,39 +66,39 @@ beforeAll(async () => {
   writeFileSync(topicsFile, "Zero downtime deployments\n");
   const run = await runMatrixFlowFromTopicList(topicsFile, fakeModel);
 
-  const posts = getDb()
-    .prepare(`SELECT id FROM posts WHERE run_id = ? ORDER BY variant_index`)
-    .all(run.runId) as Array<{ id: string }>;
+  const posts = await getDb()<Array<{ id: string }>>`
+    SELECT id FROM posts WHERE run_id = ${run.runId} ORDER BY variant_index
+  `;
   firstPostId = posts[0]!.id;
 });
 
-afterAll(() => {
-  closeDb();
+afterAll(async () => {
+  await closeDb();
   rmSync(workDir, { recursive: true, force: true });
 });
 
 describe("regeneratePost", () => {
   it("replaces the old post with a fresh row and marks the old one regenerated", async () => {
-    const before = getPost(firstPostId)!;
+    const before = (await getPost(firstPostId))!;
 
     const result = await regeneratePost(firstPostId, fakeModel);
 
     expect(result.oldPostId).toBe(firstPostId);
     expect(result.newPostId).not.toBe(firstPostId);
 
-    const old = getPost(firstPostId)!;
+    const old = (await getPost(firstPostId))!;
     expect(old.status).toBe("regenerated");
 
-    const fresh = getPost(result.newPostId)!;
+    const fresh = (await getPost(result.newPostId))!;
     expect(fresh.status).toBe("ok");
     expect(fresh.topic_id).toBe(before.topic_id);
     expect(fresh.variant_index).toBe(before.variant_index);
     expect(fresh.body).not.toBe(before.body);
 
-    const embeddingExists = getDb()
-      .prepare(`SELECT COUNT(*) AS n FROM vec_posts WHERE post_id = ?`)
-      .get(result.newPostId) as { n: number };
-    expect(embeddingExists.n).toBe(1);
+    const [embeddingExists] = await getDb()<[{ n: number }]>`
+      SELECT COUNT(*)::int AS n FROM posts WHERE id = ${result.newPostId} AND embedding IS NOT NULL
+    `;
+    expect(embeddingExists!.n).toBe(1);
   });
 
   it("refuses to regenerate a post that was already replaced", async () => {

@@ -26,9 +26,9 @@ program
 
 program
   .command("migrate")
-  .description("Create or update the SQLite schema")
-  .action(() => {
-    migrate();
+  .description("Create or update the Postgres schema")
+  .action(async () => {
+    await migrate();
   });
 
 program
@@ -86,9 +86,9 @@ program
   .command("flags")
   .option("--run <id>", "limit to one run")
   .description("List flagged posts")
-  .action((opts: { run?: string }) => {
-    migrate();
-    const rows = listFlagged(opts.run);
+  .action(async (opts: { run?: string }) => {
+    await migrate();
+    const rows = await listFlagged(opts.run);
     if (rows.length === 0) {
       logger.info("no flagged posts");
       return;
@@ -106,17 +106,17 @@ program
   .command("show")
   .argument("[run_id]", "which run to show (default: the most recent)")
   .description("Print every post from a run")
-  .action((runId?: string) => {
-    migrate();
-    const run = runId ? getRun(runId) : latestRun();
+  .action(async (runId?: string) => {
+    await migrate();
+    const run = runId ? await getRun(runId) : await latestRun();
     if (!run) {
       logger.error(runId ? `no run with id ${runId}` : "no runs yet");
       process.exitCode = 1;
       return;
     }
 
-    const posts = listByRun(run.id);
-    const topicById = new Map(listTopicsByRun(run.id).map((topic) => [topic.id, topic]));
+    const posts = await listByRun(run.id);
+    const topicById = new Map((await listTopicsByRun(run.id)).map((topic) => [topic.id, topic]));
 
     process.stdout.write(
       `run ${run.id} · ${run.flow} · ${run.created_at.slice(0, 10)} · ${posts.length} posts\n`,
@@ -162,17 +162,17 @@ program
   .argument("<run_id>")
   .option("--include-flagged", "also approve posts flagged for dup or length")
   .description("Approve every pending post in a run")
-  .action((runId: string, opts: { includeFlagged?: boolean }) => {
-    migrate();
-    const count = approvePendingInRun(runId, opts.includeFlagged === true);
+  .action(async (runId: string, opts: { includeFlagged?: boolean }) => {
+    await migrate();
+    const count = await approvePendingInRun(runId, opts.includeFlagged === true);
     process.stdout.write(`approved ${count} post(s)\n`);
   });
 
 async function setPostApprovalFromCli(postId: string, approval: Approval): Promise<void> {
   const { changePostApproval } = await import("./store/posts.js");
   try {
-    migrate();
-    const { warning } = changePostApproval(postId, approval);
+    await migrate();
+    const { warning } = await changePostApproval(postId, approval);
     if (warning) logger.warn(`post ${postId}: ${warning}`);
     process.stdout.write(`${postId} → ${approval}\n`);
   } catch (error) {
@@ -204,7 +204,7 @@ program
   .action(async (runId: string, opts: { format: string }) => {
     const format = opts.format === "json" ? "json" : "md";
     const { exportRun } = await import("./export/index.js");
-    const result = exportRun(runId, format);
+    const result = await exportRun(runId, format);
     process.stdout.write(
       `exported ${result.files.length} file(s) to ${result.outDir}\n`,
     );
@@ -250,15 +250,15 @@ program
 program
   .command("stats")
   .description("Quick database overview")
-  .action(() => {
-    migrate();
-    const run = latestRun();
-    process.stdout.write(`vectors stored: ${countEmbeddings()}\n`);
+  .action(async () => {
+    await migrate();
+    const run = await latestRun();
+    process.stdout.write(`vectors stored: ${await countEmbeddings()}\n`);
     if (run) {
       process.stdout.write(
         `latest run: ${run.id}  flow=${run.flow}  ${run.created_at}\n` +
-          `  status:   ${JSON.stringify(countByStatus(run.id))}\n` +
-          `  approval: ${JSON.stringify(countByApproval(run.id))}\n`,
+          `  status:   ${JSON.stringify(await countByStatus(run.id))}\n` +
+          `  approval: ${JSON.stringify(await countByApproval(run.id))}\n`,
       );
     } else {
       process.stdout.write("no runs yet\n");
@@ -300,8 +300,10 @@ function notYet(cmd: string, milestone: string): void {
   process.exitCode = 2;
 }
 
-process.on("exit", closeDb);
-
+// closeDb() is async (ending a connection pool needs a round trip), and
+// Node's "exit" event is strictly synchronous — it won't wait for a promise
+// started inside it. Closing explicitly here, after the command finishes
+// either way, replaces the old process.on("exit", closeDb).
 try {
   await program.parseAsync();
 } catch (err) {
@@ -309,4 +311,6 @@ try {
     error: err instanceof Error ? err.message : String(err),
   });
   process.exitCode = 1;
+} finally {
+  await closeDb();
 }

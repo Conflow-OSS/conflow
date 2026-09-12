@@ -13,10 +13,10 @@ import { seedRouter } from "./routes/seed.js";
 import { statsRouter } from "./routes/stats.js";
 
 /** Build the Express app. Kept separate from `server.ts` so tests can drive it in-process. */
-export function createApp(): Express {
+export async function createApp(): Promise<Express> {
   const env = loadEnv();
   const token = requireApiToken(env);
-  migrate();
+  await migrate();
 
   const app = express();
   app.use(express.json({ limit: "4mb" }));

@@ -5,18 +5,17 @@ import { countEmbeddings } from "../../store/vec.js";
 
 export const statsRouter = Router();
 
-statsRouter.get("/stats", (_req, res) => {
-  const run = latestRun();
-  res.json({
-    vectors: countEmbeddings(),
-    latestRun: run
-      ? {
-          id: run.id,
-          flow: run.flow,
-          created_at: run.created_at,
-          status: countByStatus(run.id),
-          approval: countByApproval(run.id),
-        }
-      : null,
-  });
+statsRouter.get("/stats", async (_req, res) => {
+  const [run, vectors] = await Promise.all([latestRun(), countEmbeddings()]);
+  const latest = run
+    ? {
+        id: run.id,
+        flow: run.flow,
+        created_at: run.created_at,
+        status: await countByStatus(run.id),
+        approval: await countByApproval(run.id),
+      }
+    : null;
+
+  res.json({ vectors, latestRun: latest });
 });

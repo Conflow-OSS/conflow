@@ -1,6 +1,3 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 // config/load.ts does `import "dotenv/config"`, which loads the real project
@@ -14,15 +11,17 @@ import { describe, expect, it, vi } from "vitest";
 // validation entirely, a different error than the one under test here).
 vi.mock("dotenv/config", () => ({}));
 
-process.env.DB_PATH = join(mkdtempSync(join(tmpdir(), "content-engine-api-boot-")), "boot.db");
-process.env.EMBED_DIM = "8";
 process.env.LOG_LEVEL = "error";
 delete process.env.API_TOKEN;
 
 const { createApp } = await import("../src/api/app.js");
 
 describe("createApp", () => {
-  it("refuses to start without API_TOKEN", () => {
-    expect(() => createApp()).toThrow(/API_TOKEN is required/);
+  it("refuses to start without API_TOKEN", async () => {
+    // requireApiToken() throws before createApp() ever reaches migrate(), so
+    // this never touches the database — no DB env needed. createApp() is
+    // async now, so the failure surfaces as a rejected promise, not a
+    // synchronous throw.
+    await expect(createApp()).rejects.toThrow(/API_TOKEN is required/);
   });
 });

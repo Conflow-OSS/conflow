@@ -25,10 +25,10 @@ export async function regeneratePost(
   postId: string,
   model: ContentModel,
 ): Promise<RegenerateResult> {
-  migrate();
+  await migrate();
   const env = loadEnv();
 
-  const oldPost = getPost(postId);
+  const oldPost = await getPost(postId);
   if (!oldPost) {
     throw new Error(`no post with id ${postId}`);
   }
@@ -39,16 +39,16 @@ export async function regeneratePost(
     throw new Error(`post ${postId} has already been replaced`);
   }
 
-  const topic = getTopic(oldPost.topic_id);
+  const topic = await getTopic(oldPost.topic_id);
   if (!topic) {
     throw new Error(`post ${postId} points at a missing topic`);
   }
 
-  const run = getRun(oldPost.run_id);
+  const run = await getRun(oldPost.run_id);
   const sourceFacts =
     run?.flow === "casestudy" ? (run.input_text ?? undefined) : undefined;
 
-  const siblings = standingVariantsOfTopic(oldPost.topic_id, postId);
+  const siblings = await standingVariantsOfTopic(oldPost.topic_id, postId);
   const lesson = oldPost.lesson_text ?? topic.angle_text;
   const otherLessons = siblings
     .map((sibling) => sibling.lesson_text)
@@ -68,7 +68,7 @@ export async function regeneratePost(
       summaryMaxChars: env.SUMMARY_MAX_CHARS,
       sourceFacts,
       flagReason: describeWhatToFix(oldPost),
-      collidedWith: loadCollisionPost(oldPost),
+      collidedWith: await loadCollisionPost(oldPost),
     },
     model,
   );
@@ -83,8 +83,8 @@ export async function regeneratePost(
   if (status === "ok") {
     const match = findDuplicate({
       postEmbedding: embedding!,
-      siblingEmbeddings: loadEmbeddingsForPosts(siblings.map((sibling) => sibling.id)),
-      ledgerEmbeddings: loadLedgerEmbeddings(oldPost.topic_id),
+      siblingEmbeddings: await loadEmbeddingsForPosts(siblings.map((sibling) => sibling.id)),
+      ledgerEmbeddings: await loadLedgerEmbeddings(oldPost.topic_id),
       siblingThreshold: env.DEDUP_SIBLING_THRESHOLD,
       ledgerThreshold: env.DEDUP_LEDGER_THRESHOLD,
     });
@@ -96,7 +96,7 @@ export async function regeneratePost(
     }
   }
 
-  const newPost = insertPost({
+  const newPost = await insertPost({
     kind: "generated",
     run_id: oldPost.run_id,
     topic_id: oldPost.topic_id,
@@ -114,8 +114,8 @@ export async function regeneratePost(
     model_channel: model.channel,
     model_id: model.model,
   });
-  upsertEmbedding(newPost.id, embedding!);
-  setStatus(postId, "regenerated");
+  await upsertEmbedding(newPost.id, embedding!);
+  await setStatus(postId, "regenerated");
 
   logger.info("post regenerated", { oldPostId: postId, newPostId: newPost.id, status });
   return { oldPostId: postId, newPostId: newPost.id, status };
@@ -129,11 +129,13 @@ function describeWhatToFix(oldPost: PostRow): string {
 }
 
 /** The post the old one was flagged as too close to, when it was a duplicate. */
-function loadCollisionPost(oldPost: PostRow): { body: string; similarity: number } | undefined {
+async function loadCollisionPost(
+  oldPost: PostRow,
+): Promise<{ body: string; similarity: number } | undefined> {
   if (oldPost.status !== "flag_dup" || !oldPost.dup_of_id) {
     return undefined;
   }
-  const collided = getPost(oldPost.dup_of_id);
+  const collided = await getPost(oldPost.dup_of_id);
   if (!collided) {
     return undefined;
   }

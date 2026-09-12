@@ -32,8 +32,11 @@ export const EnvSchema = z.object({
   LENGTH_TOLERANCE: z.coerce.number().min(0).max(1).default(0.15),
   SUMMARY_MAX_CHARS: z.coerce.number().int().positive().default(180),
 
+  // database (Postgres + pgvector)
+  DATABASE_URL: z.string().min(1).default("postgres://postgres:postgres@localhost:5432/content_engine"),
+  DB_POOL_MAX: z.coerce.number().int().positive().default(10),
+
   // paths / runtime
-  DB_PATH: z.string().min(1).default("./data/content.db"),
   EXPORT_DIR: z.string().min(1).default("./data/exports"),
 
   // http api

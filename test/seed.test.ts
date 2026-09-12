@@ -2,19 +2,25 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetTestTables, useTestDatabase } from "./support/test-db.js";
 
 const root = mkdtempSync(join(tmpdir(), "content-engine-seed-"));
-process.env.DB_PATH = join(root, "seed.db");
-process.env.EMBED_DIM = "4";
+useTestDatabase();
 process.env.VOYAGE_API_KEY = "test-key";
 process.env.LOG_LEVEL = "error";
 
-// Never hit the network — hand back a deterministic 4-dim vector per input.
-const embedDocuments = vi.fn(async (texts: string[]) => texts.map((_, i) => [i, i, i, i]));
+// Never hit the network — hand back a deterministic 16-dim vector per input
+// (16, to match the shared test database's embedding column — see test-db.ts).
+const embedDocuments = vi.fn(async (texts: string[]) =>
+  texts.map((_, i) => Array.from({ length: 16 }, (_unused, dim) => i + dim / 100)),
+);
 vi.mock("../src/embeddings/voyage.js", () => ({ embedDocuments }));
 
 const { seedCorpus } = await import("../src/pipeline/seed.js");
+const { migrate } = await import("../src/store/migrate.js");
 const { getDb, closeDb } = await import("../src/store/db.js");
+
+await migrate();
 
 function writeCorpus(dir: string): void {
   writeFileSync(join(dir, "README.md"), "# ignore me\n");
@@ -25,14 +31,15 @@ function writeCorpus(dir: string): void {
 
 let corpus: string;
 
-beforeEach(() => {
+beforeEach(async () => {
+  await resetTestTables();
   embedDocuments.mockClear();
   corpus = mkdtempSync(join(root, "corpus-"));
   writeCorpus(corpus);
 });
 
-afterAll(() => {
-  closeDb();
+afterAll(async () => {
+  await closeDb();
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -45,11 +52,13 @@ describe("seedCorpus", () => {
     expect(r.removed).toBe(0);
     expect(r.files).toEqual(["01-short.md", "02-long.md"]);
 
-    const db = getDb();
-    const posts = db.prepare(`SELECT kind, format FROM posts WHERE kind = 'seed'`).all();
+    const sql = getDb();
+    const posts = await sql`SELECT kind, format FROM posts WHERE kind = 'seed'`;
     expect(posts).toHaveLength(2);
-    const vecs = db.prepare(`SELECT COUNT(*) AS n FROM vec_posts`).get() as { n: number };
-    expect(vecs.n).toBe(2);
+    const [vecs] = await sql<[{ n: number }]>`
+      SELECT COUNT(*)::int AS n FROM posts WHERE kind = 'seed' AND embedding IS NOT NULL
+    `;
+    expect(vecs!.n).toBe(2);
     expect(embedDocuments).toHaveBeenCalledOnce();
   });
 
@@ -59,11 +68,15 @@ describe("seedCorpus", () => {
     expect(second.removed).toBe(2);
     expect(second.added).toBe(2);
 
-    const db = getDb();
-    const count = db.prepare(`SELECT COUNT(*) AS n FROM posts WHERE kind = 'seed'`).get() as { n: number };
-    expect(count.n).toBe(2);
-    const vecs = db.prepare(`SELECT COUNT(*) AS n FROM vec_posts`).get() as { n: number };
-    expect(vecs.n).toBe(2);
+    const sql = getDb();
+    const [count] = await sql<[{ n: number }]>`
+      SELECT COUNT(*)::int AS n FROM posts WHERE kind = 'seed'
+    `;
+    expect(count!.n).toBe(2);
+    const [vecs] = await sql<[{ n: number }]>`
+      SELECT COUNT(*)::int AS n FROM posts WHERE kind = 'seed' AND embedding IS NOT NULL
+    `;
+    expect(vecs!.n).toBe(2);
   });
 
   it("rejects a missing directory", async () => {

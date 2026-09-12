@@ -75,17 +75,17 @@ function closestAboveThreshold(
 }
 
 /** Seed posts + earlier standing generated posts on other topics, with their vectors. */
-export function loadLedgerEmbeddings(excludeTopicId: string): EmbeddedPost[] {
-  const ledgerPosts = dedupLedger({ excludeTopicId });
+export async function loadLedgerEmbeddings(excludeTopicId: string): Promise<EmbeddedPost[]> {
+  const ledgerPosts = await dedupLedger({ excludeTopicId });
   return attachEmbeddings(ledgerPosts.map((post) => post.id));
 }
 
-export function loadEmbeddingsForPosts(postIds: string[]): EmbeddedPost[] {
+export async function loadEmbeddingsForPosts(postIds: string[]): Promise<EmbeddedPost[]> {
   return attachEmbeddings(postIds);
 }
 
-function attachEmbeddings(postIds: string[]): EmbeddedPost[] {
-  const embeddingByPostId = getEmbeddings(postIds);
+async function attachEmbeddings(postIds: string[]): Promise<EmbeddedPost[]> {
+  const embeddingByPostId = await getEmbeddings(postIds);
   const embedded: EmbeddedPost[] = [];
   for (const postId of postIds) {
     const embedding = embeddingByPostId.get(postId);

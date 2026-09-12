@@ -10,23 +10,22 @@ export interface NewTopic {
   angle_index: number;
 }
 
-export function insertTopic(t: NewTopic): TopicRow {
+const COLUMN_NAMES = ["id", "run_id", "base_text", "base_index", "angle_text", "angle_index"] as const;
+
+export async function insertTopic(t: NewTopic): Promise<TopicRow> {
   const row: TopicRow = { id: newId(), ...t };
-  getDb()
-    .prepare(
-      `INSERT INTO topics (id, run_id, base_text, base_index, angle_text, angle_index)
-       VALUES (@id, @run_id, @base_text, @base_index, @angle_text, @angle_index)`,
-    )
-    .run(row);
+  const sql = getDb();
+  await sql`INSERT INTO topics ${sql(row, ...COLUMN_NAMES)}`;
   return row;
 }
 
-export function listTopicsByRun(runId: string): TopicRow[] {
-  return getDb()
-    .prepare(`SELECT * FROM topics WHERE run_id = ? ORDER BY base_index, angle_index`)
-    .all(runId) as TopicRow[];
+export async function listTopicsByRun(runId: string): Promise<TopicRow[]> {
+  const sql = getDb();
+  return sql<TopicRow[]>`SELECT * FROM topics WHERE run_id = ${runId} ORDER BY base_index, angle_index`;
 }
 
-export function getTopic(id: string): TopicRow | undefined {
-  return getDb().prepare(`SELECT * FROM topics WHERE id = ?`).get(id) as TopicRow | undefined;
+export async function getTopic(id: string): Promise<TopicRow | undefined> {
+  const sql = getDb();
+  const [row] = await sql<TopicRow[]>`SELECT * FROM topics WHERE id = ${id}`;
+  return row;
 }

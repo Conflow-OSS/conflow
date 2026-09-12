@@ -8,22 +8,22 @@ import { approvalBody, parseOrThrow } from "../validators.js";
 
 export const postsRouter = Router();
 
-postsRouter.get("/posts/:id", (req, res) => {
-  const post = getPost(req.params.id);
+postsRouter.get("/posts/:id", async (req, res) => {
+  const post = await getPost(req.params.id);
   if (!post) {
     throw new NotFoundError(`no post with id ${req.params.id}`);
   }
   res.json({ post });
 });
 
-postsRouter.put("/posts/:id/approval", (req, res) => {
+postsRouter.put("/posts/:id/approval", async (req, res) => {
   const { approval } = parseOrThrow(approvalBody, req.body ?? {});
-  const { post, warning } = changePostApproval(req.params.id, approval);
+  const { post, warning } = await changePostApproval(req.params.id, approval);
   res.json({ post, warning });
 });
 
 postsRouter.post("/posts/:id/regenerate", async (req, res) => {
-  const post = getPost(req.params.id);
+  const post = await getPost(req.params.id);
   if (!post) {
     throw new NotFoundError(`no post with id ${req.params.id}`);
   }
@@ -39,7 +39,7 @@ postsRouter.post("/posts/:id/regenerate", async (req, res) => {
 });
 
 postsRouter.post("/posts/:id/card", async (req, res) => {
-  const post = getPost(req.params.id);
+  const post = await getPost(req.params.id);
   if (!post) {
     throw new NotFoundError(`no post with id ${req.params.id}`);
   }
@@ -52,7 +52,7 @@ postsRouter.post("/posts/:id/card", async (req, res) => {
 });
 
 postsRouter.get("/posts/:id/card.png", async (req, res) => {
-  const post = getPost(req.params.id);
+  const post = await getPost(req.params.id);
   if (!post) {
     throw new NotFoundError(`no post with id ${req.params.id}`);
   }

@@ -36,10 +36,10 @@ export async function handleJob(job: JobLike): Promise<unknown> {
 }
 
 async function handleGenerate(job: JobLike): Promise<unknown> {
-  migrate();
+  await migrate();
   const { runId } = job.data as { runId: string };
 
-  const run = getRun(runId);
+  const run = await getRun(runId);
   if (!run) {
     throw new NotFoundError(`no run with id ${runId}`);
   }
@@ -51,19 +51,19 @@ async function handleGenerate(job: JobLike): Promise<unknown> {
   } catch (error) {
     // A failure before runGenerationForRun starts (bad model creds, say) would
     // otherwise leave the run stuck at "queued".
-    setRunStatus(runId, "failed", error instanceof Error ? error.message : String(error));
+    await setRunStatus(runId, "failed", error instanceof Error ? error.message : String(error));
     throw error;
   }
 }
 
 async function handleRegenerate(job: JobLike): Promise<unknown> {
-  migrate();
+  await migrate();
   const { postId } = job.data as { postId: string };
   return regeneratePost(postId, getModel());
 }
 
 async function handleCards(job: JobLike): Promise<unknown> {
-  migrate();
+  await migrate();
   const { runId, limit } = job.data as { runId: string; limit?: number };
   return generateCardsForRun({
     runId,
@@ -74,13 +74,13 @@ async function handleCards(job: JobLike): Promise<unknown> {
 }
 
 async function handleCard(job: JobLike): Promise<unknown> {
-  migrate();
+  await migrate();
   const { postId } = job.data as { postId: string };
   return generateOneCard({ postId, renderer: imejisRenderer, store: getImageStore() });
 }
 
 async function handleSeed(job: JobLike): Promise<unknown> {
-  migrate();
+  await migrate();
   const { posts } = job.data as { posts: Array<{ name: string; body: string }> };
   return seedDocuments(posts.map((post) => ({ file: post.name, body: post.body })));
 }

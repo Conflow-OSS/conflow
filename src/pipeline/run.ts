@@ -41,9 +41,9 @@ export async function runMatrixFlowFromTopicList(
   topicListPath: string,
   model: ContentModel,
 ): Promise<MatrixRunResult> {
-  migrate();
+  await migrate();
   const baseTopics = loadTopicList(topicListPath);
-  const run = insertRun({
+  const run = await insertRun({
     flow: "matrix",
     config: runConfig(model),
     input_kind: "topic_list",
@@ -56,12 +56,12 @@ export async function runMatrixFlowFromStory(
   storyPath: string,
   model: ContentModel,
 ): Promise<MatrixRunResult> {
-  migrate();
+  await migrate();
   const story = readFileSync(storyPath, "utf8").trim();
   if (story.length === 0) {
     throw new Error(`story file is empty: ${storyPath}`);
   }
-  const run = insertRun({
+  const run = await insertRun({
     flow: "matrix",
     config: runConfig(model),
     input_kind: "story",
@@ -79,12 +79,12 @@ export async function runCaseStudyFlow(
   caseStudyPath: string,
   model: ContentModel,
 ): Promise<MatrixRunResult> {
-  migrate();
+  await migrate();
   const caseStudy = readFileSync(caseStudyPath, "utf8").trim();
   if (caseStudy.length === 0) {
     throw new Error(`case study file is empty: ${caseStudyPath}`);
   }
-  const run = insertRun({
+  const run = await insertRun({
     flow: "casestudy",
     config: runConfig(model),
     input_kind: "story",
@@ -103,15 +103,15 @@ export async function runGenerationForRun(
   model: ContentModel,
   onProgress?: ProgressReporter,
 ): Promise<MatrixRunResult> {
-  migrate();
+  await migrate();
   const env = loadEnv();
 
   const report: ProgressReporter = async (progress) => {
-    setRunProgress(run.id, progress);
+    await setRunProgress(run.id, progress);
     if (onProgress) await onProgress(progress);
   };
 
-  setRunStatus(run.id, "running");
+  await setRunStatus(run.id, "running");
 
   try {
     const story = run.input_text ?? "";
@@ -128,7 +128,7 @@ export async function runGenerationForRun(
     const sourceFacts = run.flow === "casestudy" ? story : undefined;
     const result = await runMatrixLoop({ run, baseTopics, sourceFacts, model, report });
 
-    setRunStatus(run.id, "completed");
+    await setRunStatus(run.id, "completed");
     await report({
       phase: "done",
       postsCreated: result.postsCreated,
@@ -137,7 +137,7 @@ export async function runGenerationForRun(
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    setRunStatus(run.id, "failed", message);
+    await setRunStatus(run.id, "failed", message);
     logger.error("generation run failed", { runId: run.id, error: message });
     throw error;
   }
@@ -181,7 +181,7 @@ async function runMatrixLoop(input: {
 
     for (let angleIndex = 0; angleIndex < angles.length; angleIndex++) {
       const angle = angles[angleIndex]!;
-      const topicRow = insertTopic({
+      const topicRow = await insertTopic({
         run_id: run.id,
         base_text: baseTopic,
         base_index: baseIndex,
@@ -268,7 +268,7 @@ async function generateAndPersistLessons(input: {
 
   // Phase 2 — embed them all at once, then dedup-check and store each in order.
   const embeddings = await embedDocuments(generatedVariants.map((g) => g.variant.parsed.body));
-  const ledgerEmbeddings = loadLedgerEmbeddings(input.topicId);
+  const ledgerEmbeddings = await loadLedgerEmbeddings(input.topicId);
   const storedSiblingEmbeddings: EmbeddedPost[] = [];
 
   const totals = { created: 0, flaggedForLength: 0, flaggedAsDuplicate: 0 };
@@ -298,7 +298,7 @@ async function generateAndPersistLessons(input: {
       }
     }
 
-    const post = insertPost({
+    const post = await insertPost({
       kind: "generated",
       run_id: input.runId,
       topic_id: input.topicId,
@@ -316,7 +316,7 @@ async function generateAndPersistLessons(input: {
       model_channel: input.model.channel,
       model_id: input.model.model,
     });
-    upsertEmbedding(post.id, embedding);
+    await upsertEmbedding(post.id, embedding);
     storedSiblingEmbeddings.push({ postId: post.id, embedding });
 
     totals.created++;

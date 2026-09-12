@@ -1,9 +1,28 @@
 # Local infrastructure for the API + worker.
-#   redis  — the BullMQ job queue (added in M12b)
-#   minio  — S3-compatible object storage for the rendered image cards
+#   postgres — the database (pgvector image: Postgres + the vector extension)
+#   redis    — the BullMQ job queue
+#   minio    — S3-compatible object storage for the rendered image cards
 #
 #   docker compose up -d
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: content_engine
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Runs once, only on a brand-new (empty) volume — creates
+      # content_engine_test alongside the content_engine the app itself uses.
+      # If you already had a postgres volume from before this existed, either
+      # `docker compose down -v` to let it re-run, or create the test db by
+      # hand: docker compose exec postgres createdb -U postgres content_engine_test
+      - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
+    command: ["postgres"]
+
   redis:
     image: redis:7-alpine
     ports:
@@ -27,5 +46,6 @@ services:
     command: ["server", "/data", "--console-address", ":9001"]
 
 volumes:
+  postgres-data:
   redis-data:
   minio-data:

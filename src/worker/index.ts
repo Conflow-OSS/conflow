@@ -7,7 +7,7 @@ import { logger } from "../util/logger.js";
 import { handleJob } from "./handlers.js";
 
 const env = loadEnv();
-migrate();
+await migrate();
 
 // No boot-time "fail anything stuck at running" sweep here on purpose — with
 // more than one worker replica, a fresh replica's sweep can't tell "abandoned
@@ -63,7 +63,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
     await worker.close();
     clearTimeout(forceExit);
-    closeDb();
+    await closeDb();
     process.exit(0);
   });
 }

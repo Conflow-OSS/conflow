@@ -3,13 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetTestTables, useTestDatabase } from "./support/test-db.js";
 
-const workDir = mkdtempSync(join(tmpdir(), "content-engine-api-"));
-process.env.DB_PATH = join(workDir, "api.db");
-process.env.EMBED_DIM = "8";
+useTestDatabase();
+const cardDir = mkdtempSync(join(tmpdir(), "content-engine-api-cards-"));
 process.env.API_TOKEN = "test-token";
 process.env.IMAGE_STORE = "disk";
-process.env.CARD_DIR = join(workDir, "cards");
+process.env.CARD_DIR = cardDir;
 process.env.SSE_MAX_DURATION_MS = "300"; // short on purpose — see the "times out" SSE test
 process.env.LOG_LEVEL = "error";
 
@@ -60,28 +60,27 @@ const { insertTopic } = await import("../src/store/topics.js");
 const { insertPost, setStatus, setPostImage } = await import("../src/store/posts.js");
 const { getRun } = await import("../src/store/runs.js");
 const { closeDb } = await import("../src/store/db.js");
-const { getDb } = await import("../src/store/db.js");
 const { LocalDiskImageStore } = await import("../src/cards/disk-store.js");
 
-migrate();
-const app = createApp();
+await migrate();
+const app = await createApp();
 const auth = { Authorization: "Bearer test-token" };
 
-function seedRun() {
-  const run = insertRun({
+async function seedRun() {
+  const run = await insertRun({
     flow: "matrix",
     config: { topics: 1 },
     input_kind: "topic_list",
     status: "completed",
   });
-  const topic = insertTopic({
+  const topic = await insertTopic({
     run_id: run.id,
     base_text: "incident reviews",
     base_index: 0,
     angle_text: "why blameless matters",
     angle_index: 0,
   });
-  const ok = insertPost({
+  const ok = await insertPost({
     kind: "generated",
     run_id: run.id,
     topic_id: topic.id,
@@ -90,7 +89,7 @@ function seedRun() {
     summary: "one-line summary",
     status: "ok",
   });
-  const flagged = insertPost({
+  const flagged = await insertPost({
     kind: "generated",
     run_id: run.id,
     topic_id: topic.id,
@@ -102,8 +101,8 @@ function seedRun() {
   return { run, topic, ok, flagged };
 }
 
-beforeEach(() => {
-  getDb().exec("DELETE FROM posts; DELETE FROM topics; DELETE FROM runs; DELETE FROM vec_posts;");
+beforeEach(async () => {
+  await resetTestTables();
   enqueueJob.mockClear();
   readJob.mockClear();
   subscribeToJob.mockClear();
@@ -111,9 +110,9 @@ beforeEach(() => {
   notifySubscribed = null;
 });
 
-afterAll(() => {
-  closeDb();
-  rmSync(workDir, { recursive: true, force: true });
+afterAll(async () => {
+  await closeDb();
+  rmSync(cardDir, { recursive: true, force: true });
 });
 
 describe("health", () => {
@@ -141,7 +140,7 @@ describe("auth", () => {
 
 describe("runs", () => {
   it("lists runs newest first with counts", async () => {
-    seedRun();
+    await seedRun();
     const res = await request(app).get("/v1/runs").set(auth);
     expect(res.status).toBe(200);
     expect(res.body.runs).toHaveLength(1);
@@ -151,7 +150,7 @@ describe("runs", () => {
   });
 
   it("returns one run with its breakdown", async () => {
-    const { run } = seedRun();
+    const { run } = await seedRun();
     const res = await request(app).get(`/v1/runs/${run.id}`).set(auth);
     expect(res.status).toBe(200);
     expect(res.body.run.id).toBe(run.id);
@@ -166,39 +165,39 @@ describe("runs", () => {
   });
 
   it("filters posts by status=flagged", async () => {
-    const { run, flagged } = seedRun();
+    const { run, flagged } = await seedRun();
     const res = await request(app).get(`/v1/runs/${run.id}/posts?status=flagged`).set(auth);
     expect(res.body.posts.map((p: { id: string }) => p.id)).toEqual([flagged.id]);
   });
 
   it("filters posts by approval", async () => {
-    const { run, ok } = seedRun();
+    const { run, ok } = await seedRun();
     await request(app).put(`/v1/posts/${ok.id}/approval`).set(auth).send({ approval: "approved" });
     const res = await request(app).get(`/v1/runs/${run.id}/posts?approval=approved`).set(auth);
     expect(res.body.posts.map((p: { id: string }) => p.id)).toEqual([ok.id]);
   });
 
   it("rejects a bad status filter with 400", async () => {
-    const { run } = seedRun();
+    const { run } = await seedRun();
     const res = await request(app).get(`/v1/runs/${run.id}/posts?status=weird`).set(auth);
     expect(res.status).toBe(400);
   });
 
   it("lists topics", async () => {
-    const { run } = seedRun();
+    const { run } = await seedRun();
     const res = await request(app).get(`/v1/runs/${run.id}/topics`).set(auth);
     expect(res.body.topics).toHaveLength(1);
     expect(res.body.topics[0].angle_text).toBe("why blameless matters");
   });
 
   it("approve-all approves pending ok posts, skipping flagged by default", async () => {
-    const { run } = seedRun();
+    const { run } = await seedRun();
     const res = await request(app).post(`/v1/runs/${run.id}/approve-all`).set(auth).send({});
     expect(res.body).toEqual({ approved: 1 });
   });
 
   it("approve-all --include-flagged approves the flagged one too", async () => {
-    const { run } = seedRun();
+    const { run } = await seedRun();
     const res = await request(app)
       .post(`/v1/runs/${run.id}/approve-all`)
       .set(auth)
@@ -207,7 +206,7 @@ describe("runs", () => {
   });
 
   it("exports a run as json", async () => {
-    const { run } = seedRun();
+    const { run } = await seedRun();
     const res = await request(app).get(`/v1/runs/${run.id}/export?format=json`).set(auth);
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toMatch(/application\/json/);
@@ -216,7 +215,7 @@ describe("runs", () => {
   });
 
   it("exports a run as markdown", async () => {
-    const { run } = seedRun();
+    const { run } = await seedRun();
     const res = await request(app).get(`/v1/runs/${run.id}/export?format=md`).set(auth);
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toMatch(/text\/markdown/);
@@ -226,7 +225,7 @@ describe("runs", () => {
 
 describe("posts", () => {
   it("returns one post", async () => {
-    const { ok } = seedRun();
+    const { ok } = await seedRun();
     const res = await request(app).get(`/v1/posts/${ok.id}`).set(auth);
     expect(res.status).toBe(200);
     expect(res.body.post.id).toBe(ok.id);
@@ -237,7 +236,7 @@ describe("posts", () => {
   });
 
   it("approves a post", async () => {
-    const { ok } = seedRun();
+    const { ok } = await seedRun();
     const res = await request(app)
       .put(`/v1/posts/${ok.id}/approval`)
       .set(auth)
@@ -249,7 +248,7 @@ describe("posts", () => {
   });
 
   it("approving a flagged post succeeds but reports a warning", async () => {
-    const { flagged } = seedRun();
+    const { flagged } = await seedRun();
     const res = await request(app)
       .put(`/v1/posts/${flagged.id}/approval`)
       .set(auth)
@@ -259,8 +258,8 @@ describe("posts", () => {
   });
 
   it("409s approving a regenerated post", async () => {
-    const { ok } = seedRun();
-    setStatus(ok.id, "regenerated");
+    const { ok } = await seedRun();
+    await setStatus(ok.id, "regenerated");
     const res = await request(app)
       .put(`/v1/posts/${ok.id}/approval`)
       .set(auth)
@@ -269,7 +268,7 @@ describe("posts", () => {
   });
 
   it("400s an invalid approval value", async () => {
-    const { ok } = seedRun();
+    const { ok } = await seedRun();
     const res = await request(app)
       .put(`/v1/posts/${ok.id}/approval`)
       .set(auth)
@@ -278,7 +277,7 @@ describe("posts", () => {
   });
 
   it("queues a regenerate job for a generated post", async () => {
-    const { flagged } = seedRun();
+    const { flagged } = await seedRun();
     const res = await request(app).post(`/v1/posts/${flagged.id}/regenerate`).set(auth);
     expect(res.status).toBe(202);
     expect(res.body.jobId).toBe("job-regenerate");
@@ -286,15 +285,15 @@ describe("posts", () => {
   });
 
   it("409s regenerating an already-replaced post", async () => {
-    const { ok } = seedRun();
-    setStatus(ok.id, "regenerated");
+    const { ok } = await seedRun();
+    await setStatus(ok.id, "regenerated");
     const res = await request(app).post(`/v1/posts/${ok.id}/regenerate`).set(auth);
     expect(res.status).toBe(409);
     expect(enqueueJob).not.toHaveBeenCalled();
   });
 
   it("queues a card render for a post with a summary", async () => {
-    const { ok } = seedRun();
+    const { ok } = await seedRun();
     const res = await request(app).post(`/v1/posts/${ok.id}/card`).set(auth);
     expect(res.status).toBe(202);
     expect(res.body.jobId).toBe("job-card");
@@ -302,8 +301,8 @@ describe("posts", () => {
   });
 
   it("400s a card render for a post with no summary", async () => {
-    const run = insertRun({ flow: "matrix", config: {}, input_kind: "topic_list" });
-    const post = insertPost({
+    const run = await insertRun({ flow: "matrix", config: {}, input_kind: "topic_list" });
+    const post = await insertPost({
       kind: "generated",
       run_id: run.id,
       format: "long",
@@ -317,13 +316,13 @@ describe("posts", () => {
   });
 
   it("serves the card image from the store", async () => {
-    const { ok } = seedRun();
+    const { ok } = await seedRun();
     const stored = await new LocalDiskImageStore().put(
       "cards/test.png",
       Buffer.from("fake-png-bytes"),
       "image/png",
     );
-    setPostImage(ok.id, stored);
+    await setPostImage(ok.id, stored);
 
     const res = await request(app).get(`/v1/posts/${ok.id}/card.png`).set(auth);
     expect(res.status).toBe(200);
@@ -332,7 +331,7 @@ describe("posts", () => {
   });
 
   it("404s the card image when the post has none yet", async () => {
-    const { ok } = seedRun();
+    const { ok } = await seedRun();
     const res = await request(app).get(`/v1/posts/${ok.id}/card.png`).set(auth);
     expect(res.status).toBe(404);
   });
@@ -340,7 +339,7 @@ describe("posts", () => {
 
 describe("POST /v1/runs/:id/cards", () => {
   it("queues a card batch for the run", async () => {
-    const { run } = seedRun();
+    const { run } = await seedRun();
     const res = await request(app).post(`/v1/runs/${run.id}/cards`).set(auth).send({ limit: 5 });
     expect(res.status).toBe(202);
     expect(res.body.jobId).toBe("job-cards");
@@ -379,7 +378,7 @@ describe("GET /v1/runs/:id/events", () => {
   });
 
   it("sends a terminal event immediately for an already-finished run, no subscription", async () => {
-    const { run } = seedRun(); // seedRun() creates status: "completed"
+    const { run } = await seedRun(); // seedRun() creates status: "completed"
     const res = await request(app).get(`/v1/runs/${run.id}/events`).set(auth);
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toMatch(/text\/event-stream/);
@@ -388,7 +387,7 @@ describe("GET /v1/runs/:id/events", () => {
   });
 
   it("reports 'unavailable' for a running CLI-created run with no job_id", async () => {
-    const run = insertRun({
+    const run = await insertRun({
       flow: "matrix",
       config: {},
       input_kind: "topic_list",
@@ -400,13 +399,13 @@ describe("GET /v1/runs/:id/events", () => {
   });
 
   it("relays progress then completion from the subscribed job, and closes", async () => {
-    const run = insertRun({
+    const run = await insertRun({
       flow: "matrix",
       config: {},
       input_kind: "topic_list",
       status: "running",
     });
-    setRunJobId(run.id, "job-xyz");
+    await setRunJobId(run.id, "job-xyz");
 
     // supertest/superagent doesn't dispatch until .end()/.then() — call .end()
     // explicitly so the request is actually in flight before we wait on it,
@@ -431,13 +430,13 @@ describe("GET /v1/runs/:id/events", () => {
   });
 
   it("times out and closes when the job never settles (SSE_MAX_DURATION_MS=300 in this suite)", async () => {
-    const run = insertRun({
+    const run = await insertRun({
       flow: "matrix",
       config: {},
       input_kind: "topic_list",
       status: "running",
     });
-    setRunJobId(run.id, "job-stuck");
+    await setRunJobId(run.id, "job-stuck");
 
     const res = await new Promise<request.Response>((resolve, reject) => {
       request(app)
@@ -463,7 +462,7 @@ describe("POST /v1/runs", () => {
     expect(res.body.jobId).toBe("job-generate");
     expect(enqueueJob).toHaveBeenCalledWith("generate", { runId: res.body.runId });
 
-    const run = getRun(res.body.runId)!;
+    const run = (await getRun(res.body.runId))!;
     expect(run.status).toBe("queued");
     expect(run.job_id).toBe("job-generate");
     expect(run.input_kind).toBe("topic_list");
@@ -476,7 +475,7 @@ describe("POST /v1/runs", () => {
       .set(auth)
       .send({ flow: "casestudy", input: { kind: "story", text: "the whole story" } });
     expect(res.status).toBe(202);
-    expect(getRun(res.body.runId)!.flow).toBe("casestudy");
+    expect((await getRun(res.body.runId))!.flow).toBe("casestudy");
   });
 
   it("400s a case-study run given a topic list", async () => {

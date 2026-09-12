@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ContentModel, GenerateArgs } from "../src/models/types.js";
+import { resetTestTables, useTestDatabase } from "./support/test-db.js";
 
 const workDir = mkdtempSync(join(tmpdir(), "content-engine-matrix-"));
-process.env.DB_PATH = join(workDir, "matrix.db");
-process.env.EMBED_DIM = "16";
+useTestDatabase();
 process.env.GEN_X = "3";
 process.env.GEN_Y = "2";
 process.env.GEN_Z = "2";
@@ -25,10 +25,14 @@ vi.mock("../src/embeddings/voyage.js", async () => {
   };
 });
 
+const { migrate } = await import("../src/store/migrate.js");
 const { runMatrixFlowFromTopicList, runMatrixFlowFromStory, runCaseStudyFlow } = await import(
   "../src/pipeline/run.js"
 );
 const { getDb, closeDb } = await import("../src/store/db.js");
+
+await migrate();
+await resetTestTables();
 
 function fillerBody(marker: string, format: string): string {
   const filler = format === "short" ? "word ".repeat(90) : "word ".repeat(240);
@@ -86,15 +90,15 @@ const fakeModel: ContentModel = {
   },
 };
 
-function countPostsByFormat(runId: string): Record<string, number> {
-  const rows = getDb()
-    .prepare(`SELECT format, COUNT(*) AS n FROM posts WHERE run_id = ? GROUP BY format`)
-    .all(runId) as Array<{ format: string; n: number }>;
+async function countPostsByFormat(runId: string): Promise<Record<string, number>> {
+  const rows = await getDb()<Array<{ format: string; n: number }>>`
+    SELECT format, COUNT(*)::int AS n FROM posts WHERE run_id = ${runId} GROUP BY format
+  `;
   return Object.fromEntries(rows.map((row) => [row.format, row.n]));
 }
 
-afterAll(() => {
-  closeDb();
+afterAll(async () => {
+  await closeDb();
   rmSync(workDir, { recursive: true, force: true });
 });
 
@@ -110,28 +114,26 @@ describe("runMatrixFlowFromTopicList — 3 topics, Y=2, Z=2", () => {
     expect(result.flaggedAsDuplicate).toBe(0);
   });
 
-  it("creates 3 x 2 topic rows", () => {
-    const topicCount = getDb()
-      .prepare(`SELECT COUNT(*) AS n FROM topics WHERE run_id = ?`)
-      .get(runId) as { n: number };
-    expect(topicCount.n).toBe(6);
+  it("creates 3 x 2 topic rows", async () => {
+    const [topicCount] = await getDb()<[{ n: number }]>`
+      SELECT COUNT(*)::int AS n FROM topics WHERE run_id = ${runId}
+    `;
+    expect(topicCount!.n).toBe(6);
   });
 
-  it("creates 12 posts with the planned format split", () => {
-    expect(countPostsByFormat(runId)).toEqual({ short: 6, long: 6 });
+  it("creates 12 posts with the planned format split", async () => {
+    expect(await countPostsByFormat(runId)).toEqual({ short: 6, long: 6 });
   });
 
-  it("stores a distinct lesson and a summary on every post", () => {
-    const rows = getDb()
-      .prepare(
-        `SELECT topic_id, lesson_text, summary, summary_char_count FROM posts WHERE run_id = ?`,
-      )
-      .all(runId) as Array<{
-      topic_id: string;
-      lesson_text: string | null;
-      summary: string | null;
-      summary_char_count: number | null;
-    }>;
+  it("stores a distinct lesson and a summary on every post", async () => {
+    const rows = await getDb()<
+      Array<{
+        topic_id: string;
+        lesson_text: string | null;
+        summary: string | null;
+        summary_char_count: number | null;
+      }>
+    >`SELECT topic_id, lesson_text, summary, summary_char_count FROM posts WHERE run_id = ${runId}`;
 
     expect(rows.every((row) => row.lesson_text && row.summary)).toBe(true);
     expect(rows.every((row) => row.summary_char_count === [...row.summary!].length)).toBe(true);
@@ -148,33 +150,28 @@ describe("runMatrixFlowFromTopicList — 3 topics, Y=2, Z=2", () => {
     }
   });
 
-  it("splits the long posts between the two hook styles", () => {
-    const rows = getDb()
-      .prepare(
-        `SELECT hook_style, COUNT(*) AS n FROM posts
-         WHERE run_id = ? AND format = 'long' GROUP BY hook_style`,
-      )
-      .all(runId) as Array<{ hook_style: string; n: number }>;
+  it("splits the long posts between the two hook styles", async () => {
+    const rows = await getDb()<Array<{ hook_style: string; n: number }>>`
+      SELECT hook_style, COUNT(*)::int AS n FROM posts
+       WHERE run_id = ${runId} AND format = 'long' GROUP BY hook_style
+    `;
     expect(Object.fromEntries(rows.map((row) => [row.hook_style, row.n]))).toEqual({
       questions: 3,
       callout: 3,
     });
   });
 
-  it("stores an embedding for every post and marks them ok", () => {
-    const posts = getDb()
-      .prepare(`SELECT id, status FROM posts WHERE run_id = ?`)
-      .all(runId) as Array<{ id: string; status: string }>;
+  it("stores an embedding for every post and marks them ok", async () => {
+    const posts = await getDb()<Array<{ id: string; status: string }>>`
+      SELECT id, status FROM posts WHERE run_id = ${runId}
+    `;
     expect(posts).toHaveLength(12);
     expect(posts.every((post) => post.status === "ok")).toBe(true);
 
-    const embeddingCount = getDb()
-      .prepare(
-        `SELECT COUNT(*) AS n FROM vec_posts WHERE post_id IN
-         (SELECT id FROM posts WHERE run_id = ?)`,
-      )
-      .get(runId) as { n: number };
-    expect(embeddingCount.n).toBe(12);
+    const [embeddingCount] = await getDb()<[{ n: number }]>`
+      SELECT COUNT(*)::int AS n FROM posts WHERE run_id = ${runId} AND embedding IS NOT NULL
+    `;
+    expect(embeddingCount!.n).toBe(12);
   });
 });
 
@@ -190,17 +187,17 @@ describe("runMatrixFlowFromStory — GEN_X=3, Y=2, Z=2", () => {
     expect(result.postsCreated).toBe(12);
   });
 
-  it("derives GEN_X topics from the story and stores the story as input_text", () => {
-    const run = getDb()
-      .prepare(`SELECT input_kind, input_text FROM runs WHERE id = ?`)
-      .get(runId) as { input_kind: string; input_text: string };
-    expect(run.input_kind).toBe("story");
-    expect(run.input_text).toContain("building a GKE platform");
+  it("derives GEN_X topics from the story and stores the story as input_text", async () => {
+    const [run] = await getDb()<[{ input_kind: string; input_text: string }]>`
+      SELECT input_kind, input_text FROM runs WHERE id = ${runId}
+    `;
+    expect(run!.input_kind).toBe("story");
+    expect(run!.input_text).toContain("building a GKE platform");
 
-    const distinctBaseTopics = getDb()
-      .prepare(`SELECT COUNT(DISTINCT base_text) AS n FROM topics WHERE run_id = ?`)
-      .get(runId) as { n: number };
-    expect(distinctBaseTopics.n).toBe(3);
+    const [distinctBaseTopics] = await getDb()<[{ n: number }]>`
+      SELECT COUNT(DISTINCT base_text)::int AS n FROM topics WHERE run_id = ${runId}
+    `;
+    expect(distinctBaseTopics!.n).toBe(3);
   });
 
   it("does NOT pass the story as source facts (advisory mode)", () => {
@@ -225,9 +222,9 @@ describe("runCaseStudyFlow — GEN_X=3, Y=2, Z=2", () => {
     expect(result.postsCreated).toBe(12);
   });
 
-  it("records the run as the casestudy flow", () => {
-    const run = getDb().prepare(`SELECT flow FROM runs WHERE id = ?`).get(runId) as { flow: string };
-    expect(run.flow).toBe("casestudy");
+  it("records the run as the casestudy flow", async () => {
+    const [run] = await getDb()<[{ flow: string }]>`SELECT flow FROM runs WHERE id = ${runId}`;
+    expect(run!.flow).toBe("casestudy");
   });
 
   it("passes the case study text as source facts to every post", () => {
@@ -237,4 +234,3 @@ describe("runCaseStudyFlow — GEN_X=3, Y=2, Z=2", () => {
     expect(everyPromptHasSourceFacts).toBe(true);
   });
 });
-

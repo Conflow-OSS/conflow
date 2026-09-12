@@ -37,10 +37,10 @@ export async function generateCardsForRun(input: {
   renderer: CardRenderer;
   store: ImageStore;
 }): Promise<CardBatchResult> {
-  migrate();
+  await migrate();
   const renderDelayMs = loadEnv().CARD_RENDER_DELAY_MS;
 
-  const posts = postsNeedingCards(input.runId, input.limit);
+  const posts = await postsNeedingCards(input.runId, input.limit);
   const result: CardBatchResult = { attempted: 0, rendered: 0, reused: 0, failed: 0 };
 
   for (const post of posts) {
@@ -67,14 +67,14 @@ export async function generateOneCard(input: {
   renderer: CardRenderer;
   store: ImageStore;
 }): Promise<{ url: string }> {
-  migrate();
+  await migrate();
 
-  const post = getPost(input.postId);
+  const post = await getPost(input.postId);
   if (!post) throw new Error(`no post with id ${input.postId}`);
   if (!post.summary) throw new Error(`post ${input.postId} has no summary to put on a card`);
 
   const stored = await renderAndStore(post.summary, input.renderer, input.store);
-  setPostImage(input.postId, stored);
+  await setPostImage(input.postId, stored);
   logger.info("card re-rendered", { postId: input.postId, url: stored.url });
   return { url: stored.url };
 }
@@ -93,19 +93,19 @@ async function placeCard(
   try {
     const alreadyStored = await store.find(key);
     if (alreadyStored) {
-      setPostImage(postId, alreadyStored);
+      await setPostImage(postId, alreadyStored);
       logger.info("card reused", { postId, url: alreadyStored.url });
       return { status: "reused", url: alreadyStored.url };
     }
 
     const bytes = await renderer.render(summary);
     const stored = await store.put(key, bytes, renderer.contentType());
-    setPostImage(postId, stored);
+    await setPostImage(postId, stored);
     logger.info("card rendered", { postId, url: stored.url });
     return { status: "rendered", url: stored.url };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    setPostImageError(postId, message);
+    await setPostImageError(postId, message);
     logger.error("card failed", { postId, error: message });
     return { status: "failed", error: message };
   }

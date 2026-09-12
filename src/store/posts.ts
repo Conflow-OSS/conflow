@@ -1,6 +1,6 @@
 import { ConflictError, NotFoundError } from "../util/errors.js";
 import { newId } from "../util/ids.js";
-import { getDb } from "./db.js";
+import { getDb, type Queryable } from "./db.js";
 import type {
   Approval,
   HookStyle,
@@ -29,17 +29,54 @@ export interface NewPost {
   model_id?: string | null;
 }
 
-const COLUMNS = `id, kind, run_id, topic_id, variant_index, format, hook_style,
-  topic_angle, lesson_text, body, char_count, summary, summary_char_count, status,
-  flag_reason, dup_of_id, dup_score, approval, approved_at, image_url, image_key,
-  image_generated_at, image_error, model_channel, model_id, created_at`;
+const COLUMN_NAMES = [
+  "id",
+  "kind",
+  "run_id",
+  "topic_id",
+  "variant_index",
+  "format",
+  "hook_style",
+  "topic_angle",
+  "lesson_text",
+  "body",
+  "char_count",
+  "summary",
+  "summary_char_count",
+  "status",
+  "flag_reason",
+  "dup_of_id",
+  "dup_score",
+  "approval",
+  "approved_at",
+  "image_url",
+  "image_key",
+  "image_generated_at",
+  "image_error",
+  "model_channel",
+  "model_id",
+  "created_at",
+] as const;
+
+// The embedding lives on this same table (a real pgvector column, not a
+// sidecar table like SQLite needed) — deliberately left out of every query
+// below. A post can be a few KB of JSON without it; a 1024-float vector
+// tagging along on every fetch would be wasted bandwidth on every read, and
+// would leak into every API response that just does res.json({ post }).
+// store/vec.ts is the only place that ever selects it.
+const COLUMNS = COLUMN_NAMES.join(", ");
 
 /** Character count by code point — closer to how a person (and LinkedIn) counts. */
 export function charCount(text: string): number {
   return [...text].length;
 }
 
-export function insertPost(p: NewPost): PostRow {
+/**
+ * `db` defaults to the pool, but `pipeline/seed.ts` passes in a transaction's
+ * scoped connection instead — the pool's own connection wouldn't be part of
+ * that transaction, which would silently break its atomicity.
+ */
+export async function insertPost(p: NewPost, db: Queryable = getDb()): Promise<PostRow> {
   const summary = p.summary ?? null;
   const row: PostRow = {
     id: newId(),
@@ -69,37 +106,35 @@ export function insertPost(p: NewPost): PostRow {
     model_id: p.model_id ?? null,
     created_at: new Date().toISOString(),
   };
-  getDb()
-    .prepare(
-      `INSERT INTO posts (${COLUMNS}) VALUES
-       (@id, @kind, @run_id, @topic_id, @variant_index, @format, @hook_style,
-        @topic_angle, @lesson_text, @body, @char_count, @summary, @summary_char_count,
-        @status, @flag_reason, @dup_of_id, @dup_score, @approval, @approved_at,
-        @image_url, @image_key, @image_generated_at, @image_error,
-        @model_channel, @model_id, @created_at)`,
-    )
-    .run(row);
+
+  await db`INSERT INTO posts ${db(row, ...COLUMN_NAMES)}`;
   return row;
 }
 
-export function getPost(id: string): PostRow | undefined {
-  return getDb().prepare(`SELECT * FROM posts WHERE id = ?`).get(id) as
-    | PostRow
-    | undefined;
+export async function getPost(id: string): Promise<PostRow | undefined> {
+  const sql = getDb();
+  const [row] = await sql.unsafe<PostRow[]>(`SELECT ${COLUMNS} FROM posts WHERE id = $1`, [id]);
+  return row;
 }
 
-export function listByRun(runId: string): PostRow[] {
-  return getDb()
-    .prepare(`SELECT * FROM posts WHERE run_id = ? ORDER BY created_at`)
-    .all(runId) as PostRow[];
+export async function listByRun(runId: string): Promise<PostRow[]> {
+  const sql = getDb();
+  return sql.unsafe<PostRow[]>(
+    `SELECT ${COLUMNS} FROM posts WHERE run_id = $1 ORDER BY created_at`,
+    [runId],
+  );
 }
 
-export function listFlagged(runId?: string): PostRow[] {
-  const sql = runId
-    ? `SELECT * FROM posts WHERE run_id = ? AND status IN ('flag_dup','flag_length') ORDER BY created_at`
-    : `SELECT * FROM posts WHERE status IN ('flag_dup','flag_length') ORDER BY created_at`;
-  const stmt = getDb().prepare(sql);
-  return (runId ? stmt.all(runId) : stmt.all()) as PostRow[];
+export async function listFlagged(runId?: string): Promise<PostRow[]> {
+  const sql = getDb();
+  const whereRun = runId ? `AND run_id = $1` : "";
+  const params = runId ? [runId] : [];
+  return sql.unsafe<PostRow[]>(
+    `SELECT ${COLUMNS} FROM posts
+      WHERE status IN ('flag_dup','flag_length') ${whereRun}
+      ORDER BY created_at`,
+    params,
+  );
 }
 
 export interface StatusPatch {
@@ -108,19 +143,13 @@ export interface StatusPatch {
   dup_score?: number | null;
 }
 
-export function setStatus(id: string, status: PostStatus, patch: StatusPatch = {}): void {
-  getDb()
-    .prepare(
-      `UPDATE posts SET status = @status, flag_reason = @flag_reason,
-         dup_of_id = @dup_of_id, dup_score = @dup_score WHERE id = @id`,
-    )
-    .run({
-      id,
-      status,
-      flag_reason: patch.flag_reason ?? null,
-      dup_of_id: patch.dup_of_id ?? null,
-      dup_score: patch.dup_score ?? null,
-    });
+export async function setStatus(id: string, status: PostStatus, patch: StatusPatch = {}): Promise<void> {
+  const sql = getDb();
+  await sql`
+    UPDATE posts SET status = ${status}, flag_reason = ${patch.flag_reason ?? null},
+      dup_of_id = ${patch.dup_of_id ?? null}, dup_score = ${patch.dup_score ?? null}
+    WHERE id = ${id}
+  `;
 }
 
 /**
@@ -128,36 +157,35 @@ export function setStatus(id: string, status: PostStatus, patch: StatusPatch = {
  * every seed post, plus generated posts that are still standing (`status = 'ok'`
  * and not rejected). Superseded (`regenerated`) and `discarded` drafts are excluded.
  */
-export function dedupLedger(opts: { excludeTopicId?: string | null } = {}): PostRow[] {
-  return getDb()
-    .prepare(
-      `SELECT * FROM posts
-        WHERE (kind = 'seed' OR (kind = 'generated' AND status = 'ok' AND approval != 'rejected'))
-          AND (@excl IS NULL OR topic_id IS NULL OR topic_id != @excl)`,
-    )
-    .all({ excl: opts.excludeTopicId ?? null }) as PostRow[];
+export async function dedupLedger(opts: { excludeTopicId?: string | null } = {}): Promise<PostRow[]> {
+  const sql = getDb();
+  return sql.unsafe<PostRow[]>(
+    `SELECT ${COLUMNS} FROM posts
+      WHERE (kind = 'seed' OR (kind = 'generated' AND status = 'ok' AND approval != 'rejected'))
+        AND ($1::text IS NULL OR topic_id IS NULL OR topic_id != $1)`,
+    [opts.excludeTopicId ?? null],
+  );
 }
 
 /** The still-standing generated variants for one angle-topic — used as dedup siblings. */
-export function standingVariantsOfTopic(topicId: string, excludePostId?: string): PostRow[] {
-  return getDb()
-    .prepare(
-      `SELECT * FROM posts
-        WHERE topic_id = @topicId AND kind = 'generated' AND status = 'ok' AND approval != 'rejected'
-          AND (@excludePostId IS NULL OR id != @excludePostId)
-        ORDER BY created_at`,
-    )
-    .all({ topicId, excludePostId: excludePostId ?? null }) as PostRow[];
+export async function standingVariantsOfTopic(
+  topicId: string,
+  excludePostId?: string,
+): Promise<PostRow[]> {
+  const sql = getDb();
+  return sql.unsafe<PostRow[]>(
+    `SELECT ${COLUMNS} FROM posts
+      WHERE topic_id = $1 AND kind = 'generated' AND status = 'ok' AND approval != 'rejected'
+        AND ($2::text IS NULL OR id != $2)
+      ORDER BY created_at`,
+    [topicId, excludePostId ?? null],
+  );
 }
 
-export function setApproval(id: string, approval: Approval): void {
-  getDb()
-    .prepare(`UPDATE posts SET approval = @approval, approved_at = @approvedAt WHERE id = @id`)
-    .run({
-      id,
-      approval,
-      approvedAt: approval === "approved" ? new Date().toISOString() : null,
-    });
+export async function setApproval(id: string, approval: Approval): Promise<void> {
+  const sql = getDb();
+  const approvedAt = approval === "approved" ? new Date().toISOString() : null;
+  await sql`UPDATE posts SET approval = ${approval}, approved_at = ${approvedAt} WHERE id = ${id}`;
 }
 
 export interface ApprovalChange {
@@ -171,8 +199,8 @@ export interface ApprovalChange {
  * a superseded post can't be approved, and approving a flagged post is allowed
  * but handed back as a warning. Callers run `migrate()` first.
  */
-export function changePostApproval(postId: string, approval: Approval): ApprovalChange {
-  const post = getPost(postId);
+export async function changePostApproval(postId: string, approval: Approval): Promise<ApprovalChange> {
+  const post = await getPost(postId);
   if (!post) {
     throw new NotFoundError(`no post with id ${postId}`);
   }
@@ -184,58 +212,61 @@ export function changePostApproval(postId: string, approval: Approval): Approval
   const warning =
     approval === "approved" && flagged ? `post is ${post.status} — approved anyway` : undefined;
 
-  setApproval(postId, approval);
-  return { post: getPost(postId) as PostRow, warning };
+  await setApproval(postId, approval);
+  return { post: (await getPost(postId)) as PostRow, warning };
 }
 
 /** Approve every pending post in a run. Skips flagged posts unless includeFlagged. */
-export function approvePendingInRun(runId: string, includeFlagged: boolean): number {
+export async function approvePendingInRun(runId: string, includeFlagged: boolean): Promise<number> {
+  const sql = getDb();
   const statusClause = includeFlagged ? "" : "AND status = 'ok'";
-  const result = getDb()
-    .prepare(
-      `UPDATE posts SET approval = 'approved', approved_at = @now
-        WHERE run_id = @runId AND kind = 'generated' AND approval = 'pending' ${statusClause}`,
-    )
-    .run({ runId, now: new Date().toISOString() });
-  return result.changes;
+  const result = await sql.unsafe(
+    `UPDATE posts SET approval = 'approved', approved_at = $1
+      WHERE run_id = $2 AND kind = 'generated' AND approval = 'pending' ${statusClause}`,
+    [new Date().toISOString(), runId],
+  );
+  return result.count;
 }
 
 /** Approved, well-formed posts in a run that have a summary but no card image yet. */
-export function postsNeedingCards(runId: string, limit: number): PostRow[] {
-  return getDb()
-    .prepare(
-      `SELECT * FROM posts
-        WHERE run_id = @runId AND status = 'ok' AND approval = 'approved'
-          AND summary IS NOT NULL AND image_url IS NULL
-        ORDER BY created_at
-        LIMIT @limit`,
-    )
-    .all({ runId, limit }) as PostRow[];
+export async function postsNeedingCards(runId: string, limit: number): Promise<PostRow[]> {
+  const sql = getDb();
+  return sql.unsafe<PostRow[]>(
+    `SELECT ${COLUMNS} FROM posts
+      WHERE run_id = $1 AND status = 'ok' AND approval = 'approved'
+        AND summary IS NOT NULL AND image_url IS NULL
+      ORDER BY created_at
+      LIMIT $2`,
+    [runId, limit],
+  );
 }
 
-export function setPostImage(id: string, image: { url: string; key: string }): void {
-  getDb()
-    .prepare(
-      `UPDATE posts SET image_url = @url, image_key = @key,
-         image_generated_at = @now, image_error = NULL WHERE id = @id`,
-    )
-    .run({ id, url: image.url, key: image.key, now: new Date().toISOString() });
+export async function setPostImage(id: string, image: { url: string; key: string }): Promise<void> {
+  const sql = getDb();
+  await sql`
+    UPDATE posts SET image_url = ${image.url}, image_key = ${image.key},
+      image_generated_at = ${new Date().toISOString()}, image_error = NULL
+    WHERE id = ${id}
+  `;
 }
 
-export function setPostImageError(id: string, message: string): void {
-  getDb().prepare(`UPDATE posts SET image_error = @message WHERE id = @id`).run({ id, message });
+export async function setPostImageError(id: string, message: string): Promise<void> {
+  const sql = getDb();
+  await sql`UPDATE posts SET image_error = ${message} WHERE id = ${id}`;
 }
 
-export function countByStatus(runId: string): Record<string, number> {
-  const rows = getDb()
-    .prepare(`SELECT status, COUNT(*) AS n FROM posts WHERE run_id = ? GROUP BY status`)
-    .all(runId) as Array<{ status: string; n: number }>;
+export async function countByStatus(runId: string): Promise<Record<string, number>> {
+  const sql = getDb();
+  const rows = await sql<Array<{ status: string; n: number }>>`
+    SELECT status, COUNT(*)::int AS n FROM posts WHERE run_id = ${runId} GROUP BY status
+  `;
   return Object.fromEntries(rows.map((r) => [r.status, r.n]));
 }
 
-export function countByApproval(runId: string): Record<string, number> {
-  const rows = getDb()
-    .prepare(`SELECT approval, COUNT(*) AS n FROM posts WHERE run_id = ? GROUP BY approval`)
-    .all(runId) as Array<{ approval: string; n: number }>;
+export async function countByApproval(runId: string): Promise<Record<string, number>> {
+  const sql = getDb();
+  const rows = await sql<Array<{ approval: string; n: number }>>`
+    SELECT approval, COUNT(*)::int AS n FROM posts WHERE run_id = ${runId} GROUP BY approval
+  `;
   return Object.fromEntries(rows.map((r) => [r.approval, r.n]));
 }
