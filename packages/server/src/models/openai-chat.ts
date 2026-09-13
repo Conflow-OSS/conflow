@@ -21,6 +21,8 @@ export interface ChatCall {
   user: string;
   temperature: number;
   maxTokens: number;
+  /** Channel-specific extras merged into the request body — e.g. Vertex's `thinking` toggle. */
+  extraBody?: Record<string, unknown>;
 }
 
 /** POST an OpenAI-shaped /chat/completions request with the standard retry policy. */
@@ -33,6 +35,7 @@ export async function openaiChat(c: ChatCall): Promise<GenerateResult> {
     ],
     temperature: c.temperature,
     max_tokens: c.maxTokens,
+    ...c.extraBody,
   });
 
   const json = await withRetry(async (signal) => {

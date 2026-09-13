@@ -83,6 +83,8 @@ describe("VertexModel", () => {
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toContain("/locations/global/endpoints/openapi/chat/completions");
     expect((init as RequestInit).headers).toMatchObject({ authorization: "Bearer fake-adc-token" });
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.thinking).toEqual({ type: "disabled" });
   });
 
   it("retries a 500 then succeeds", async () => {
