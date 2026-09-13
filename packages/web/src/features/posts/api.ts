@@ -1,6 +1,36 @@
 import type { Approval, PostRow } from "@content-engine/shared";
 import { api } from "@/lib/api";
 
+export interface PostListFilter {
+  limit?: number;
+  offset?: number;
+  run_id?: string;
+  status?: "ok" | "flagged" | "all";
+  approval?: Approval;
+  includeSuperseded?: boolean;
+  includeRejected?: boolean;
+}
+
+export interface PostListResult {
+  posts: PostRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export function listPosts(filter: PostListFilter = {}) {
+  const params = new URLSearchParams();
+  if (filter.limit) params.set("limit", String(filter.limit));
+  if (filter.offset) params.set("offset", String(filter.offset));
+  if (filter.run_id) params.set("run_id", filter.run_id);
+  if (filter.status) params.set("status", filter.status);
+  if (filter.approval) params.set("approval", filter.approval);
+  if (filter.includeSuperseded) params.set("includeSuperseded", "true");
+  if (filter.includeRejected) params.set("includeRejected", "true");
+  const qs = params.toString();
+  return api.get<PostListResult>(`/posts${qs ? `?${qs}` : ""}`);
+}
+
 export function getPost(postId: string) {
   return api.get<{ post: PostRow }>(`/posts/${postId}`);
 }
