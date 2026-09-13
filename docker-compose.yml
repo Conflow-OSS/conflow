@@ -20,7 +20,7 @@ services:
       # If you already had a postgres volume from before this existed, either
       # `docker compose down -v` to let it re-run, or create the test db by
       # hand: docker compose exec postgres createdb -U postgres content_engine_test
-      - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
+      - ./packages/server/scripts/postgres-init:/docker-entrypoint-initdb.d:ro
     command: ["postgres"]
 
   redis:
