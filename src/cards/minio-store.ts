@@ -1,5 +1,6 @@
 import {
   CreateBucketCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
@@ -64,6 +65,10 @@ export class MinioImageStore implements ImageStore {
     } catch {
       throw new NotFoundError(`no card at ${key}`);
     }
+  }
+
+  async delete(key: string): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 
   private urlFor(key: string): string {

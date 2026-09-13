@@ -40,21 +40,22 @@ export async function generatePost(
   };
 }
 
-function checkLengths(
-  parsed: ParsedPost,
+/** Body/summary length bands, shared with `pipeline/edit.ts` for hand-edited text. */
+export function checkLengths(
+  content: { body: string; summary: string | null },
   format: PostFormat,
   summaryMaxChars: number,
 ): { status: PostStatus; reason: string | null } {
   const tolerance = loadEnv().LENGTH_TOLERANCE;
 
-  const bodyProblem = outsideBand(charCount(parsed.body), CHARACTER_BAND_BY_FORMAT[format], tolerance);
+  const bodyProblem = outsideBand(charCount(content.body), CHARACTER_BAND_BY_FORMAT[format], tolerance);
   if (bodyProblem) {
     return { status: "flag_length", reason: `body ${bodyProblem}` };
   }
 
-  if (parsed.summary !== null) {
+  if (content.summary !== null) {
     const summaryLimit = Math.round(summaryMaxChars * (1 + tolerance));
-    const summaryLength = charCount(parsed.summary);
+    const summaryLength = charCount(content.summary);
     if (summaryLength > summaryLimit) {
       return {
         status: "flag_length",

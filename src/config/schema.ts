@@ -28,6 +28,7 @@ export const EnvSchema = z.object({
 
   // dedup / validation
   DEDUP_LEDGER_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
+  DEDUP_LEDGER_WINDOW_DAYS: z.coerce.number().int().positive().default(30),
   DEDUP_SIBLING_THRESHOLD: z.coerce.number().min(0).max(1).default(0.93),
   LENGTH_TOLERANCE: z.coerce.number().min(0).max(1).default(0.15),
   SUMMARY_MAX_CHARS: z.coerce.number().int().positive().default(180),

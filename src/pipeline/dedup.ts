@@ -1,4 +1,3 @@
-import { dedupLedger } from "../store/posts.js";
 import { getEmbeddings } from "../store/vec.js";
 import { cosine } from "../util/cosine.js";
 
@@ -13,23 +12,29 @@ export interface DuplicateMatch {
   reason: string;
 }
 
+export interface LedgerCandidate {
+  postId: string;
+  similarity: number;
+}
+
 /**
  * Decide whether a freshly generated post is a near-duplicate.
  *
  * It is checked twice, tightest first:
  *   - against its siblings (other variants of the same angle-topic) — these are
  *     meant to be about the same thing, so only near-identical text is flagged
- *   - against the ledger (seed posts + earlier standing posts on other topics) —
- *     a looser threshold, because repeating a whole point across topics is the
- *     repetition we actually care about
+ *   - against the ledger's single closest match (seed posts + recent standing
+ *     posts on other topics — `store/vec.ts`'s `nearestLedgerMatch` has already
+ *     narrowed this to one candidate via SQL) — a looser threshold, because
+ *     repeating a whole point across topics soon after is what actually matters
  *
  * Returns the closest match that crosses a threshold, or null.
  */
 export function findDuplicate(input: {
   postEmbedding: number[];
   siblingEmbeddings: EmbeddedPost[];
-  ledgerEmbeddings: EmbeddedPost[];
   siblingThreshold: number;
+  ledgerMatch: LedgerCandidate | null;
   ledgerThreshold: number;
 }): DuplicateMatch | null {
   const siblingMatch = closestAboveThreshold(
@@ -44,15 +49,11 @@ export function findDuplicate(input: {
     };
   }
 
-  const ledgerMatch = closestAboveThreshold(
-    input.postEmbedding,
-    input.ledgerEmbeddings,
-    input.ledgerThreshold,
-  );
-  if (ledgerMatch) {
+  if (input.ledgerMatch && input.ledgerMatch.similarity >= input.ledgerThreshold) {
     return {
-      ...ledgerMatch,
-      reason: `too close to an existing post (similarity ${ledgerMatch.similarity.toFixed(2)})`,
+      duplicateOfPostId: input.ledgerMatch.postId,
+      similarity: input.ledgerMatch.similarity,
+      reason: `too close to an existing post (similarity ${input.ledgerMatch.similarity.toFixed(2)})`,
     };
   }
 
@@ -72,12 +73,6 @@ function closestAboveThreshold(
     }
   }
   return closest;
-}
-
-/** Seed posts + earlier standing generated posts on other topics, with their vectors. */
-export async function loadLedgerEmbeddings(excludeTopicId: string): Promise<EmbeddedPost[]> {
-  const ledgerPosts = await dedupLedger({ excludeTopicId });
-  return attachEmbeddings(ledgerPosts.map((post) => post.id));
 }
 
 export async function loadEmbeddingsForPosts(postIds: string[]): Promise<EmbeddedPost[]> {

@@ -38,6 +38,7 @@ vi.mock("@aws-sdk/client-s3", () => {
     GetObjectCommand: class extends FakeCommand {},
     PutObjectCommand: class extends FakeCommand {},
     PutBucketPolicyCommand: class extends FakeCommand {},
+    DeleteObjectCommand: class extends FakeCommand {},
   };
 });
 
@@ -124,5 +125,12 @@ describe("MinioImageStore", () => {
     objectExists = false;
     const store = new MinioImageStore();
     await expect(store.get("cards/missing.png")).rejects.toThrow(/no card at/);
+  });
+
+  it("delete() sends a DeleteObjectCommand for the key", async () => {
+    const store = new MinioImageStore();
+    await store.delete("cards/stale.png");
+    const deleteCommand = sent.find((command) => command.name === "DeleteObjectCommand");
+    expect(deleteCommand?.input).toMatchObject({ Bucket: "content-cards", Key: "cards/stale.png" });
   });
 });

@@ -6,10 +6,11 @@ import { getPost, insertPost, setStatus, standingVariantsOfTopic } from "../stor
 import { getRun } from "../store/runs.js";
 import { getTopic } from "../store/topics.js";
 import type { PostRow, PostStatus } from "../store/types.js";
-import { upsertEmbedding } from "../store/vec.js";
+import { nearestLedgerMatch, upsertEmbedding } from "../store/vec.js";
 import { logger } from "../util/logger.js";
-import { findDuplicate, loadEmbeddingsForPosts, loadLedgerEmbeddings } from "./dedup.js";
+import { findDuplicate, loadEmbeddingsForPosts } from "./dedup.js";
 import { generatePost } from "./generate.js";
+import { parseRunConfig } from "./run.js";
 
 export interface RegenerateResult {
   oldPostId: string;
@@ -64,7 +65,7 @@ export async function regeneratePost(
       format: oldPost.format,
       hookStyle: oldPost.hook_style,
       variantNumber: (oldPost.variant_index ?? 0) + 1,
-      variantCount: readPostsPerAngle(run?.config_json) ?? env.GEN_Z,
+      variantCount: run ? parseRunConfig(run.config_json).postsPerAngle : env.GEN_Z,
       summaryMaxChars: env.SUMMARY_MAX_CHARS,
       sourceFacts,
       flagReason: describeWhatToFix(oldPost),
@@ -81,11 +82,15 @@ export async function regeneratePost(
   let duplicateScore: number | null = null;
 
   if (status === "ok") {
+    const ledgerMatch = await nearestLedgerMatch(embedding!, {
+      excludeTopicId: oldPost.topic_id,
+      windowDays: env.DEDUP_LEDGER_WINDOW_DAYS,
+    });
     const match = findDuplicate({
       postEmbedding: embedding!,
       siblingEmbeddings: await loadEmbeddingsForPosts(siblings.map((sibling) => sibling.id)),
-      ledgerEmbeddings: await loadLedgerEmbeddings(oldPost.topic_id),
       siblingThreshold: env.DEDUP_SIBLING_THRESHOLD,
+      ledgerMatch,
       ledgerThreshold: env.DEDUP_LEDGER_THRESHOLD,
     });
     if (match) {
@@ -115,7 +120,7 @@ export async function regeneratePost(
     model_id: model.model,
   });
   await upsertEmbedding(newPost.id, embedding!);
-  await setStatus(postId, "regenerated");
+  await setStatus(postId, "regenerated", { superseded_by_id: newPost.id });
 
   logger.info("post regenerated", { oldPostId: postId, newPostId: newPost.id, status });
   return { oldPostId: postId, newPostId: newPost.id, status };
@@ -140,14 +145,4 @@ async function loadCollisionPost(
     return undefined;
   }
   return { body: collided.body, similarity: oldPost.dup_score ?? 0 };
-}
-
-function readPostsPerAngle(configJson: string | undefined): number | null {
-  if (!configJson) return null;
-  try {
-    const parsed = JSON.parse(configJson) as { postsPerAngle?: number };
-    return typeof parsed.postsPerAngle === "number" ? parsed.postsPerAngle : null;
-  } catch {
-    return null;
-  }
 }

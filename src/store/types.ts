@@ -55,8 +55,10 @@ export interface PostRow {
   flag_reason: string | null;
   dup_of_id: string | null;
   dup_score: number | null;
+  superseded_by_id: string | null;
   approval: Approval;
   approved_at: string | null;
+  published_at: string | null;
   image_url: string | null;
   image_key: string | null;
   image_generated_at: string | null;

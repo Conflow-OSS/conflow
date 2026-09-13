@@ -10,7 +10,9 @@ import { jobsRouter } from "./routes/jobs.js";
 import { postsRouter } from "./routes/posts.js";
 import { runsRouter } from "./routes/runs.js";
 import { seedRouter } from "./routes/seed.js";
+import { seedPostsRouter } from "./routes/seed-posts.js";
 import { statsRouter } from "./routes/stats.js";
+import { topicsRouter } from "./routes/topics.js";
 
 /** Build the Express app. Kept separate from `server.ts` so tests can drive it in-process. */
 export async function createApp(): Promise<Express> {
@@ -31,7 +33,9 @@ export async function createApp(): Promise<Express> {
   v1.use(postsRouter);
   v1.use(jobsRouter);
   v1.use(seedRouter);
+  v1.use(seedPostsRouter);
   v1.use(statsRouter);
+  v1.use(topicsRouter);
   app.use("/v1", v1);
 
   app.use(notFoundHandler);

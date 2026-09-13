@@ -39,10 +39,8 @@ const generateCardsForRun = vi.fn(async (_input: unknown) => ({
   reused: 0,
   failed: 0,
 }));
-const generateOneCard = vi.fn(async (_input: unknown) => ({ url: "https://cdn.example/card.png" }));
 vi.mock("../src/cards/run.js", () => ({
   generateCardsForRun: (...args: [unknown]) => generateCardsForRun(...args),
-  generateOneCard: (...args: [unknown]) => generateOneCard(...args),
   imejisRenderer: { render: vi.fn(), contentType: () => "image/png" },
 }));
 
@@ -102,7 +100,6 @@ beforeEach(async () => {
   await resetTestTables();
   model.current = makeFakeModel();
   generateCardsForRun.mockClear();
-  generateOneCard.mockClear();
   seedDocuments.mockClear();
 });
 
@@ -231,13 +228,6 @@ describe("handleJob — cards", () => {
     expect(generateCardsForRun).toHaveBeenCalledWith(
       expect.objectContaining({ runId: "run-1", limit: 3 }),
     );
-  });
-});
-
-describe("handleJob — card", () => {
-  it("re-renders one post's card", async () => {
-    await handleJob(fakeJob("card", { postId: "post-1" }));
-    expect(generateOneCard).toHaveBeenCalledWith(expect.objectContaining({ postId: "post-1" }));
   });
 });
 

@@ -88,6 +88,7 @@ describe("regeneratePost", () => {
 
     const old = (await getPost(firstPostId))!;
     expect(old.status).toBe("regenerated");
+    expect(old.superseded_by_id).toBe(result.newPostId);
 
     const fresh = (await getPost(result.newPostId))!;
     expect(fresh.status).toBe("ok");

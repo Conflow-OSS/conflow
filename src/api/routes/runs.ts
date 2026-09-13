@@ -53,7 +53,12 @@ runsRouter.post("/runs", async (req, res) => {
 
   const run = await insertRun({
     flow: body.flow,
-    config: { anglesPerTopic: env.GEN_Y, postsPerAngle: env.GEN_Z, model: env.MODEL_ID },
+    config: {
+      topicCount: body.topicCount ?? env.GEN_X,
+      anglesPerTopic: body.anglesPerTopic ?? env.GEN_Y,
+      postsPerAngle: body.postsPerAngle ?? env.GEN_Z,
+      model: env.MODEL_ID,
+    },
     input_kind: inputKind,
     input_text: inputText,
     status: "queued",
@@ -92,9 +97,15 @@ runsRouter.get("/runs/:id", async (req, res) => {
 
 runsRouter.get("/runs/:id/posts", async (req, res) => {
   const run = await requireRun(req.params.id);
-  const { status, approval } = parseOrThrow(postFilterQuery, req.query);
+  const { status, approval, includeSuperseded, includeRejected } = parseOrThrow(postFilterQuery, req.query);
 
   let posts = await listByRun(run.id);
+  if (!includeSuperseded) {
+    posts = posts.filter((post) => post.status !== "regenerated");
+  }
+  if (!includeRejected && approval !== "rejected") {
+    posts = posts.filter((post) => post.approval !== "rejected");
+  }
   if (status === "ok") {
     posts = posts.filter((post) => post.status === "ok");
   } else if (status === "flagged") {

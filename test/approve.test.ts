@@ -14,6 +14,7 @@ const {
   approvePendingInRun,
   postsNeedingCards,
   countByApproval,
+  publishPost,
 } = await import("../src/store/posts.js");
 const { closeDb } = await import("../src/store/db.js");
 
@@ -88,6 +89,35 @@ describe("approval", () => {
     await newGeneratedPost(runId);
 
     expect(await approvePendingInRun(runId, false)).toBe(1);
+  });
+});
+
+describe("publishPost", () => {
+  it("refuses to publish a post that isn't approved yet", async () => {
+    const post = await newGeneratedPost(runId);
+    await expect(publishPost(post.id)).rejects.toThrow(/must be approved/);
+  });
+
+  it("publishes an approved post", async () => {
+    const post = await newGeneratedPost(runId);
+    await setApproval(post.id, "approved");
+
+    const published = await publishPost(post.id);
+    expect(published.published_at).not.toBeNull();
+    expect((await getPost(post.id))!.published_at).toBe(published.published_at);
+  });
+
+  it("publishing an already-published post is a no-op, not an error", async () => {
+    const post = await newGeneratedPost(runId);
+    await setApproval(post.id, "approved");
+    const first = await publishPost(post.id);
+
+    const second = await publishPost(post.id);
+    expect(second.published_at).toBe(first.published_at);
+  });
+
+  it("throws for a post that doesn't exist", async () => {
+    await expect(publishPost("no-such-post")).rejects.toThrow(/no post with id/);
   });
 });
 

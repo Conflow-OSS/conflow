@@ -29,3 +29,58 @@ export async function getTopic(id: string): Promise<TopicRow | undefined> {
   const [row] = await sql<TopicRow[]>`SELECT * FROM topics WHERE id = ${id}`;
   return row;
 }
+
+export interface DistinctTopic {
+  base_text: string;
+  run_ids: string[];
+  angles: string[];
+  last_used_at: string;
+}
+
+/**
+ * Every base topic ever used, across every run, grouped with every angle
+ * already explored under it — a human-facing check for "have I covered this
+ * before" at topic-selection time, before a run is even started. Deliberately
+ * separate from (and earlier than) the embedding-based dedup, which only ever
+ * catches near-duplicate *text* after generation already happened — this
+ * catches "I'm about to spend a whole run on a topic I already did," which a
+ * human recognizes from the topic string itself, no embedding needed.
+ */
+export async function listDistinctTopics(opts: {
+  limit: number;
+  offset: number;
+  q?: string;
+}): Promise<{ topics: DistinctTopic[]; total: number }> {
+  const sql = getDb();
+  const params: string[] = [];
+  let where = "";
+  if (opts.q) {
+    params.push(`%${opts.q}%`);
+    where = `WHERE t.base_text ILIKE $${params.length}`;
+  }
+
+  const limitParam = params.length + 1;
+  const offsetParam = params.length + 2;
+
+  const [topics, [{ n }]] = await Promise.all([
+    sql.unsafe<DistinctTopic[]>(
+      `SELECT t.base_text,
+              ARRAY_AGG(DISTINCT t.run_id) AS run_ids,
+              ARRAY_AGG(DISTINCT t.angle_text) AS angles,
+              MAX(r.created_at) AS last_used_at
+         FROM topics t
+         JOIN runs r ON r.id = t.run_id
+         ${where}
+        GROUP BY t.base_text
+        ORDER BY last_used_at DESC
+        LIMIT $${limitParam} OFFSET $${offsetParam}`,
+      [...params, opts.limit, opts.offset],
+    ),
+    sql.unsafe<[{ n: number }]>(
+      `SELECT COUNT(DISTINCT t.base_text)::int AS n FROM topics t ${where}`,
+      params,
+    ),
+  ]);
+
+  return { topics, total: n };
+}

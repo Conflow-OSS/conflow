@@ -11,9 +11,14 @@ process.env.LOG_LEVEL = "error";
 
 const { migrate } = await import("../src/store/migrate.js");
 const { insertRun } = await import("../src/store/runs.js");
-const { insertPost, getPost, setApproval } = await import("../src/store/posts.js");
+const { insertPost, getPost, setApproval, setStatus } = await import("../src/store/posts.js");
 const { generateCardsForRun, generateOneCard } = await import("../src/cards/run.js");
-const { closeDb } = await import("../src/store/db.js");
+const { closeDb, getDb } = await import("../src/store/db.js");
+
+async function setSummary(postId: string, summary: string): Promise<void> {
+  const sql = getDb();
+  await sql`UPDATE posts SET summary = ${summary} WHERE id = ${postId}`;
+}
 
 await migrate();
 
@@ -44,6 +49,10 @@ class FakeStore implements ImageStore {
     const bytes = this.objects.get(key);
     if (!bytes) throw new Error(`no card at ${key}`);
     return bytes;
+  }
+
+  async delete(key: string): Promise<void> {
+    this.objects.delete(key);
   }
 }
 
@@ -142,17 +151,52 @@ describe("generateCardsForRun", () => {
 });
 
 describe("generateOneCard", () => {
-  it("always renders fresh, even for a summary already cached", async () => {
+  it("reuses a cached render instead of rendering again — same idempotency as the batch", async () => {
     const a = await approvedPost("cached line");
     await generateCardsForRun({ runId, limit: 10, renderer, store });
     vi.clearAllMocks();
 
     await generateOneCard({ postId: a, renderer, store });
+    expect(renderer.render).not.toHaveBeenCalled();
+  });
+
+  it("renders fresh and deletes the old card when the summary has changed", async () => {
+    const a = await approvedPost("first version");
+    await generateOneCard({ postId: a, renderer, store });
+    const firstKey = (await getPost(a))!.image_key!;
+    expect(store.objects.has(firstKey)).toBe(true);
+
+    await setSummary(a, "second version");
+    vi.clearAllMocks();
+
+    const { url } = await generateOneCard({ postId: a, renderer, store });
     expect(renderer.render).toHaveBeenCalledTimes(1);
+    expect(url).not.toContain(firstKey);
+    expect(store.objects.has(firstKey)).toBe(false);
+  });
+
+  it("does not delete the old card if another post still shares that exact key", async () => {
+    const a = await approvedPost("shared line");
+    const b = await approvedPost("shared line"); // identical summary → same content-addressed key
+    await generateCardsForRun({ runId, limit: 10, renderer, store });
+    const sharedKey = (await getPost(a))!.image_key!;
+    expect((await getPost(b))!.image_key).toBe(sharedKey);
+
+    await setSummary(a, "a's line has changed");
+    await generateOneCard({ postId: a, renderer, store });
+
+    expect(store.objects.has(sharedKey)).toBe(true); // b still points at it
+    expect((await getPost(b))!.image_key).toBe(sharedKey);
   });
 
   it("refuses a post with no summary", async () => {
     const a = await approvedPost(null);
     await expect(generateOneCard({ postId: a, renderer, store })).rejects.toThrow(/no summary/);
+  });
+
+  it("refuses a superseded (regenerated) post", async () => {
+    const a = await approvedPost("a summary");
+    await setStatus(a, "regenerated");
+    await expect(generateOneCard({ postId: a, renderer, store })).rejects.toThrow(/superseded/);
   });
 });

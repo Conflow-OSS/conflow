@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { loadEnv } from "../config/load.js";
 import { NotFoundError } from "../util/errors.js";
@@ -27,6 +27,13 @@ export class LocalDiskImageStore implements ImageStore {
       throw new NotFoundError(`no card at ${key}`);
     }
     return readFileSync(filePath);
+  }
+
+  async delete(key: string): Promise<void> {
+    const filePath = this.pathFor(key);
+    if (existsSync(filePath)) {
+      unlinkSync(filePath);
+    }
   }
 
   private pathFor(key: string): string {

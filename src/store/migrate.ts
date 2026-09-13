@@ -64,8 +64,10 @@ export async function migrate(): Promise<void> {
       flag_reason        TEXT,
       dup_of_id          TEXT REFERENCES posts(id),
       dup_score          DOUBLE PRECISION,
+      superseded_by_id   TEXT REFERENCES posts(id),
       approval           TEXT NOT NULL DEFAULT 'pending',
       approved_at        TEXT,
+      published_at       TEXT,
       image_url          TEXT,
       image_key          TEXT,
       image_generated_at TEXT,
@@ -81,6 +83,13 @@ export async function migrate(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_posts_topic  ON posts(topic_id);
     CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
     CREATE INDEX IF NOT EXISTS idx_topics_run   ON topics(run_id);
+
+    -- published_at and superseded_by_id were added after the table already
+    -- existed in real databases — CREATE TABLE IF NOT EXISTS above is a
+    -- no-op there, so they need their own ADD COLUMN IF NOT EXISTS to
+    -- actually reach them.
+    ALTER TABLE posts ADD COLUMN IF NOT EXISTS published_at TEXT;
+    ALTER TABLE posts ADD COLUMN IF NOT EXISTS superseded_by_id TEXT REFERENCES posts(id);
   `);
 
   const [row] = await sql<{ value: string }[]>`SELECT value FROM meta WHERE key = 'embed_dim'`;

@@ -16,8 +16,9 @@ const embedDocuments = vi.fn(async (texts: string[]) =>
 );
 vi.mock("../src/embeddings/voyage.js", () => ({ embedDocuments }));
 
-const { seedCorpus } = await import("../src/pipeline/seed.js");
+const { seedCorpus, addSeedPost } = await import("../src/pipeline/seed.js");
 const { migrate } = await import("../src/store/migrate.js");
+const { listSeedPosts, deleteSeedPost, insertPost, setStatus } = await import("../src/store/posts.js");
 const { getDb, closeDb } = await import("../src/store/db.js");
 
 await migrate();
@@ -81,5 +82,69 @@ describe("seedCorpus", () => {
 
   it("rejects a missing directory", async () => {
     await expect(seedCorpus(join(root, "does-not-exist"))).rejects.toThrow(/not a directory/);
+  });
+});
+
+describe("addSeedPost", () => {
+  it("adds one seed post without touching the existing corpus", async () => {
+    await seedCorpus(corpus); // 2 existing seed posts
+    embedDocuments.mockClear();
+
+    const added = await addSeedPost("a freshly hand-written post, added on its own");
+    expect(added.kind).toBe("seed");
+    expect(embedDocuments).toHaveBeenCalledOnce();
+
+    const { total } = await listSeedPosts(50, 0);
+    expect(total).toBe(3);
+  });
+
+  it("infers short vs long format the same way the batch import does", async () => {
+    const short = await addSeedPost("a short one");
+    const long = await addSeedPost("x ".repeat(500).trim());
+    expect(short.format).toBe("short");
+    expect(long.format).toBe("long");
+  });
+});
+
+describe("listSeedPosts", () => {
+  it("paginates and only ever returns kind=seed", async () => {
+    await seedCorpus(corpus); // 2 seed posts
+    await insertPost({ kind: "generated", format: "long", body: "x".repeat(1000) });
+
+    const page1 = await listSeedPosts(1, 0);
+    expect(page1.total).toBe(2);
+    expect(page1.posts).toHaveLength(1);
+    expect(page1.posts[0]!.kind).toBe("seed");
+
+    const page2 = await listSeedPosts(1, 1);
+    expect(page2.posts).toHaveLength(1);
+    expect(page2.posts[0]!.id).not.toBe(page1.posts[0]!.id);
+  });
+});
+
+describe("deleteSeedPost", () => {
+  it("removes the post and clears any dup_of_id pointing at it", async () => {
+    const seed = await addSeedPost("a seed post about to be deleted");
+    const generated = await insertPost({ kind: "generated", format: "long", body: "x".repeat(1000) });
+    await setStatus(generated.id, "flag_dup", { flag_reason: "too close", dup_of_id: seed.id, dup_score: 0.9 });
+
+    await deleteSeedPost(seed.id);
+
+    const { total } = await listSeedPosts(50, 0);
+    expect(total).toBe(0);
+    const sql = getDb();
+    const [row] = await sql<[{ dup_of_id: string | null }]>`
+      SELECT dup_of_id FROM posts WHERE id = ${generated.id}
+    `;
+    expect(row!.dup_of_id).toBeNull();
+  });
+
+  it("refuses to delete a non-seed post through this path", async () => {
+    const generated = await insertPost({ kind: "generated", format: "long", body: "x".repeat(1000) });
+    await expect(deleteSeedPost(generated.id)).rejects.toThrow(/no seed post with id/);
+  });
+
+  it("throws for an unknown id", async () => {
+    await expect(deleteSeedPost("no-such-post")).rejects.toThrow(/no seed post with id/);
   });
 });

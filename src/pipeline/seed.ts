@@ -5,6 +5,7 @@ import { embedDocuments } from "../embeddings/voyage.js";
 import { getDb } from "../store/db.js";
 import { migrate } from "../store/migrate.js";
 import { charCount, insertPost } from "../store/posts.js";
+import type { PostRow } from "../store/types.js";
 import { upsertEmbedding } from "../store/vec.js";
 import { logger } from "../util/logger.js";
 
@@ -92,4 +93,24 @@ export async function seedDocuments(docs: SeedDoc[]): Promise<SeedResult> {
   const result: SeedResult = { removed, added: docs.length, files: docs.map((d) => d.file), short, long };
   logger.info("seed complete", result);
   return result;
+}
+
+/**
+ * Add one seed post without touching the rest of the corpus — unlike
+ * `seedDocuments`/`seedCorpus`, which wipe and replace all of them. This is
+ * the path a UI's "add a seed post" action uses; the bulk wipe-and-replace
+ * stays for the `content seed <dir>` / whole-folder-is-source-of-truth flow.
+ */
+export async function addSeedPost(body: string): Promise<PostRow> {
+  const env = loadEnv();
+  requireVoyage(env);
+  await migrate();
+
+  const [vector] = await embedDocuments([body]);
+  const format = charCount(body) <= SHORT_MAX ? "short" : "long";
+  const post = await insertPost({ kind: "seed", format, body });
+  await upsertEmbedding(post.id, vector!);
+
+  logger.info("seed post added", { postId: post.id, format });
+  return post;
 }

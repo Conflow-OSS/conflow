@@ -42,4 +42,15 @@ describe("LocalDiskImageStore", () => {
     await store.put("cards/present.png", Buffer.from("hello"), "image/png");
     expect(await store.get("cards/present.png")).toEqual(Buffer.from("hello"));
   });
+
+  it("delete() removes the file, and is a no-op when nothing is there", async () => {
+    const store = new LocalDiskImageStore();
+    await store.put("cards/to-delete.png", Buffer.from("x"), "image/png");
+    expect(await store.find("cards/to-delete.png")).not.toBeNull();
+
+    await store.delete("cards/to-delete.png");
+    expect(await store.find("cards/to-delete.png")).toBeNull();
+
+    await expect(store.delete("cards/never-existed.png")).resolves.toBeUndefined();
+  });
 });

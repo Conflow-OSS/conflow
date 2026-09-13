@@ -2,7 +2,15 @@ import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { loadEnv } from "../config/load.js";
 import { migrate } from "../store/migrate.js";
-import { getPost, postsNeedingCards, setPostImage, setPostImageError } from "../store/posts.js";
+import {
+  getPost,
+  imageKeyInUseElsewhere,
+  postsNeedingCards,
+  setPostImage,
+  setPostImageError,
+} from "../store/posts.js";
+import type { PostRow } from "../store/types.js";
+import { BadRequestError, ConflictError, NotFoundError } from "../util/errors.js";
 import { logger } from "../util/logger.js";
 import type { ImageStore, StoredImage } from "./image-store.js";
 import { cardContentType, renderCard } from "./imejis.js";
@@ -45,7 +53,7 @@ export async function generateCardsForRun(input: {
 
   for (const post of posts) {
     result.attempted++;
-    const outcome = await placeCard(post.id, post.summary!, input.renderer, input.store);
+    const outcome = await placeCard(post, input.renderer, input.store);
 
     if (outcome.status === "rendered") {
       result.rendered++;
@@ -61,7 +69,11 @@ export async function generateCardsForRun(input: {
   return result;
 }
 
-/** (Re)render one specific post's card — always a fresh render, no cache. */
+/**
+ * Render (or reuse) one specific post's card. Idempotent, same as the batch —
+ * an unchanged summary hits the same content-addressed key and costs no
+ * render, deliberately, since Imejis' free tier is only 100 renders/month.
+ */
 export async function generateOneCard(input: {
   postId: string;
   renderer: CardRenderer;
@@ -70,54 +82,87 @@ export async function generateOneCard(input: {
   await migrate();
 
   const post = await getPost(input.postId);
-  if (!post) throw new Error(`no post with id ${input.postId}`);
-  if (!post.summary) throw new Error(`post ${input.postId} has no summary to put on a card`);
+  if (!post) throw new NotFoundError(`no post with id ${input.postId}`);
+  if (post.status === "regenerated") {
+    throw new ConflictError(`post ${input.postId} was superseded — it can't have a card generated`);
+  }
+  if (!post.summary) throw new BadRequestError(`post ${input.postId} has no summary to put on a card`);
 
-  const stored = await renderAndStore(post.summary, input.renderer, input.store);
-  await setPostImage(input.postId, stored);
-  logger.info("card re-rendered", { postId: input.postId, url: stored.url });
-  return { url: stored.url };
+  const outcome = await placeCard(post, input.renderer, input.store);
+  if (outcome.status === "failed") {
+    throw new Error(outcome.error);
+  }
+  return { url: outcome.url };
 }
 
 type PlaceOutcome =
   | { status: "rendered" | "reused"; url: string }
   | { status: "failed"; error: string };
 
-async function placeCard(
-  postId: string,
-  summary: string,
-  renderer: CardRenderer,
-  store: ImageStore,
-): Promise<PlaceOutcome> {
-  const key = cardKey(summary, renderer.contentType());
+/**
+ * Render-or-reuse `post`'s card, then point the post at it. If the post
+ * already pointed at a *different* card (its summary changed since — the
+ * batch path never hits this, since it only ever looks at posts with no card
+ * yet), the old object is deleted, unless another post's card happens to
+ * share the exact same content-addressed key — possible because the key is
+ * derived from the summary text, not the post id.
+ */
+async function placeCard(post: PostRow, renderer: CardRenderer, store: ImageStore): Promise<PlaceOutcome> {
+  const key = cardKey(post.summary!, renderer.contentType());
+  const previousKey = post.image_key;
+
   try {
     const alreadyStored = await store.find(key);
-    if (alreadyStored) {
-      await setPostImage(postId, alreadyStored);
-      logger.info("card reused", { postId, url: alreadyStored.url });
-      return { status: "reused", url: alreadyStored.url };
+    const stored = alreadyStored ?? (await renderAndStore(post.summary!, key, renderer, store));
+    await setPostImage(post.id, stored);
+
+    if (previousKey && previousKey !== key) {
+      await deleteCardIfOrphaned(previousKey, post.id, store);
     }
 
-    const bytes = await renderer.render(summary);
-    const stored = await store.put(key, bytes, renderer.contentType());
-    await setPostImage(postId, stored);
-    logger.info("card rendered", { postId, url: stored.url });
-    return { status: "rendered", url: stored.url };
+    const status = alreadyStored ? "reused" : "rendered";
+    logger.info(`card ${status}`, { postId: post.id, url: stored.url });
+    return { status, url: stored.url };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await setPostImageError(postId, message);
-    logger.error("card failed", { postId, error: message });
+    await setPostImageError(post.id, message);
+    logger.error("card failed", { postId: post.id, error: message });
     return { status: "failed", error: message };
+  }
+}
+
+/**
+ * Delete an image a post no longer points at — unless some other post's card
+ * still lives at that exact key (possible since the key is content-addressed,
+ * not tied to a post id). A delete failure is logged, not thrown: whatever
+ * the post's current card is already rendered fine, and a leftover object is
+ * a bucket-hygiene issue, not a reason to report the whole operation as
+ * failed. Exported so `pipeline/edit.ts` can reuse it — an edited summary
+ * orphans a card the same way a re-rendered one does.
+ */
+export async function deleteCardIfOrphaned(key: string, postId: string, store: ImageStore): Promise<void> {
+  try {
+    if (await imageKeyInUseElsewhere(key, postId)) {
+      return;
+    }
+    await store.delete(key);
+  } catch (error) {
+    logger.warn("could not delete the previous card", {
+      postId,
+      key,
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 }
 
 async function renderAndStore(
   summary: string,
+  key: string,
   renderer: CardRenderer,
   store: ImageStore,
 ): Promise<StoredImage> {
   const bytes = await renderer.render(summary);
-  return store.put(cardKey(summary, renderer.contentType()), bytes, renderer.contentType());
+  return store.put(key, bytes, renderer.contentType());
 }
 
 /** Content-addressed: same design + format + summary → same key → one render, ever. */

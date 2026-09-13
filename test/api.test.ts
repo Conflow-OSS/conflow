@@ -11,7 +11,22 @@ process.env.API_TOKEN = "test-token";
 process.env.IMAGE_STORE = "disk";
 process.env.CARD_DIR = cardDir;
 process.env.SSE_MAX_DURATION_MS = "300"; // short on purpose — see the "times out" SSE test
+process.env.EMBED_DIM = "16"; // matches fake-embeddings.ts, shared with every other DB-backed test file
+process.env.VOYAGE_API_KEY = "test-key"; // embedDocuments is mocked below, but addSeedPost still checks this is set
 process.env.LOG_LEVEL = "error";
+
+vi.mock("../src/embeddings/voyage.js", async () => {
+  const { textToVector } = await import("./support/fake-embeddings.js");
+  return {
+    embedDocuments: async (texts: string[]) => texts.map(textToVector),
+    embedQuery: async (text: string) => textToVector(text),
+  };
+});
+
+vi.mock("../src/cards/imejis.js", () => ({
+  renderCard: async (summary: string) => Buffer.from(`png:${summary}`),
+  cardContentType: () => "image/png",
+}));
 
 const enqueueJob = vi.fn(async (type: string) => ({ jobId: `job-${type}` }));
 const readJob = vi.fn(
@@ -54,6 +69,7 @@ vi.mock("../src/queue/queue.js", () => ({
 }));
 
 const { createApp } = await import("../src/api/app.js");
+const { loadEnv } = await import("../src/config/load.js");
 const { migrate } = await import("../src/store/migrate.js");
 const { insertRun, setRunJobId } = await import("../src/store/runs.js");
 const { insertTopic } = await import("../src/store/topics.js");
@@ -183,6 +199,21 @@ describe("runs", () => {
     expect(res.status).toBe(400);
   });
 
+  it("hides rejected posts by default, shows them with includeRejected=true", async () => {
+    const { run, ok, flagged } = await seedRun();
+    await request(app).put(`/v1/posts/${flagged.id}/approval`).set(auth).send({ approval: "rejected" });
+
+    const hidden = await request(app).get(`/v1/runs/${run.id}/posts`).set(auth);
+    expect(hidden.body.posts.map((p: { id: string }) => p.id)).toEqual([ok.id]);
+
+    const shown = await request(app).get(`/v1/runs/${run.id}/posts?includeRejected=true`).set(auth);
+    expect(shown.body.posts.map((p: { id: string }) => p.id).sort()).toEqual([flagged.id, ok.id].sort());
+
+    // An explicit approval=rejected filter wins regardless of includeRejected.
+    const explicit = await request(app).get(`/v1/runs/${run.id}/posts?approval=rejected`).set(auth);
+    expect(explicit.body.posts.map((p: { id: string }) => p.id)).toEqual([flagged.id]);
+  });
+
   it("lists topics", async () => {
     const { run } = await seedRun();
     const res = await request(app).get(`/v1/runs/${run.id}/topics`).set(auth);
@@ -220,6 +251,28 @@ describe("runs", () => {
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toMatch(/text\/markdown/);
     expect(res.text).toContain(`# Run ${run.id}`);
+  });
+});
+
+describe("GET /v1/posts", () => {
+  it("lists across runs, paginated, excluding seed posts", async () => {
+    await seedRun(); // 2 generated posts
+    await insertPost({ kind: "seed", format: "long", body: "z".repeat(1000) });
+
+    const res = await request(app).get("/v1/posts?limit=1&offset=0").set(auth);
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(2);
+    expect(res.body.posts).toHaveLength(1);
+    expect(res.body.posts[0].kind).toBe("generated");
+  });
+
+  it("filters by run_id", async () => {
+    const { run } = await seedRun();
+    const otherRun = await insertRun({ flow: "matrix", config: {}, input_kind: "topic_list" });
+    await insertPost({ kind: "generated", run_id: otherRun.id, format: "long", body: "a".repeat(1000) });
+
+    const res = await request(app).get(`/v1/posts?run_id=${run.id}`).set(auth);
+    expect(res.body.posts.every((p: { run_id: string }) => p.run_id === run.id)).toBe(true);
   });
 });
 
@@ -292,12 +345,47 @@ describe("posts", () => {
     expect(enqueueJob).not.toHaveBeenCalled();
   });
 
-  it("queues a card render for a post with a summary", async () => {
+  it("edits a post synchronously — no job involved", async () => {
+    const { ok } = await seedRun();
+    const res = await request(app)
+      .patch(`/v1/posts/${ok.id}`)
+      .set(auth)
+      .send({ body: "b".repeat(1000), summary: "new summary" });
+    expect(res.status).toBe(200);
+    expect(res.body.post.body).toBe("b".repeat(1000));
+    expect(res.body.post.summary).toBe("new summary");
+    expect(res.body.post.approval).toBe("pending");
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it("400s an edit with neither body nor summary", async () => {
+    const { ok } = await seedRun();
+    const res = await request(app).patch(`/v1/posts/${ok.id}`).set(auth).send({});
+    expect(res.status).toBe(400);
+    expect(enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it("publishes an approved post", async () => {
+    const { ok } = await seedRun();
+    await request(app).put(`/v1/posts/${ok.id}/approval`).set(auth).send({ approval: "approved" });
+
+    const res = await request(app).post(`/v1/posts/${ok.id}/publish`).set(auth);
+    expect(res.status).toBe(200);
+    expect(res.body.post.published_at).not.toBeNull();
+  });
+
+  it("409s publishing a post that isn't approved", async () => {
+    const { ok } = await seedRun();
+    const res = await request(app).post(`/v1/posts/${ok.id}/publish`).set(auth);
+    expect(res.status).toBe(409);
+  });
+
+  it("renders a card synchronously — no job involved", async () => {
     const { ok } = await seedRun();
     const res = await request(app).post(`/v1/posts/${ok.id}/card`).set(auth);
-    expect(res.status).toBe(202);
-    expect(res.body.jobId).toBe("job-card");
-    expect(enqueueJob).toHaveBeenCalledWith("card", { postId: ok.id });
+    expect(res.status).toBe(200);
+    expect(res.body.post.image_url).toContain("file://");
+    expect(enqueueJob).not.toHaveBeenCalled();
   });
 
   it("400s a card render for a post with no summary", async () => {
@@ -333,6 +421,67 @@ describe("posts", () => {
   it("404s the card image when the post has none yet", async () => {
     const { ok } = await seedRun();
     const res = await request(app).get(`/v1/posts/${ok.id}/card.png`).set(auth);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("GET /v1/topics", () => {
+  it("groups by base topic across runs, for the reuse-check use case", async () => {
+    const runA = await insertRun({ flow: "matrix", config: {}, input_kind: "topic_list" });
+    const runB = await insertRun({ flow: "matrix", config: {}, input_kind: "topic_list" });
+    await insertTopic({
+      run_id: runA.id,
+      base_text: "zz-api-unique incident reviews",
+      base_index: 0,
+      angle_text: "blameless culture",
+      angle_index: 0,
+    });
+    await insertTopic({
+      run_id: runB.id,
+      base_text: "zz-api-unique incident reviews",
+      base_index: 0,
+      angle_text: "postmortem timing",
+      angle_index: 0,
+    });
+
+    const res = await request(app).get("/v1/topics?q=zz-api-unique incident").set(auth);
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.topics[0].run_ids.sort()).toEqual([runA.id, runB.id].sort());
+    expect(res.body.topics[0].angles.sort()).toEqual(["blameless culture", "postmortem timing"]);
+  });
+});
+
+describe("seed-posts", () => {
+  it("adds one seed post without touching existing ones, then lists it", async () => {
+    const first = await request(app).post("/v1/seed-posts").set(auth).send({ body: "a".repeat(50) });
+    expect(first.status).toBe(201);
+    expect(first.body.post.kind).toBe("seed");
+
+    const second = await request(app).post("/v1/seed-posts").set(auth).send({ body: "b".repeat(50) });
+    expect(second.status).toBe(201);
+
+    const list = await request(app).get("/v1/seed-posts").set(auth);
+    expect(list.status).toBe(200);
+    expect(list.body.total).toBe(2);
+  });
+
+  it("400s an add with no body", async () => {
+    const res = await request(app).post("/v1/seed-posts").set(auth).send({});
+    expect(res.status).toBe(400);
+  });
+
+  it("deletes a seed post", async () => {
+    const added = await request(app).post("/v1/seed-posts").set(auth).send({ body: "c".repeat(50) });
+    const del = await request(app).delete(`/v1/seed-posts/${added.body.post.id}`).set(auth);
+    expect(del.status).toBe(204);
+
+    const list = await request(app).get("/v1/seed-posts").set(auth);
+    expect(list.body.total).toBe(0);
+  });
+
+  it("404s deleting an unknown seed post", async () => {
+    const res = await request(app).delete("/v1/seed-posts/nope").set(auth);
     expect(res.status).toBe(404);
   });
 });
@@ -493,6 +642,36 @@ describe("POST /v1/runs", () => {
       .set(auth)
       .send({ flow: "matrix", input: { kind: "topics", topics: [] } });
     expect(res.status).toBe(400);
+  });
+
+  it("records an overridden angles/posts-per-angle in the run's own config, not just env defaults", async () => {
+    const res = await request(app)
+      .post("/v1/runs")
+      .set(auth)
+      .send({
+        flow: "matrix",
+        input: { kind: "topics", topics: ["a"] },
+        anglesPerTopic: 7,
+        postsPerAngle: 3,
+      });
+    expect(res.status).toBe(202);
+
+    const run = (await getRun(res.body.runId))!;
+    const config = JSON.parse(run.config_json);
+    expect(config.anglesPerTopic).toBe(7);
+    expect(config.postsPerAngle).toBe(3);
+  });
+
+  it("falls back to env defaults for anything not overridden", async () => {
+    const res = await request(app)
+      .post("/v1/runs")
+      .set(auth)
+      .send({ flow: "matrix", input: { kind: "topics", topics: ["a"] } });
+
+    const run = (await getRun(res.body.runId))!;
+    const config = JSON.parse(run.config_json);
+    expect(config.anglesPerTopic).toBe(loadEnv().GEN_Y);
+    expect(config.postsPerAngle).toBe(loadEnv().GEN_Z);
   });
 });
 

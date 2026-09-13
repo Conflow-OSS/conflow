@@ -63,6 +63,46 @@ export async function nearest(
   return rows.map((r) => ({ post_id: r.post_id, similarity: 1 - r.distance }));
 }
 
+export interface LedgerMatch {
+  postId: string;
+  similarity: number;
+}
+
+/**
+ * Closest ledger candidate for the cross-topic dedup check: every seed post
+ * (the voice reference — always in scope, it doesn't go stale), plus standing
+ * generated posts from other topics created within the last `windowDays`.
+ * Older generated posts are deliberately not compared: the goal is "don't
+ * repeat yourself again soon," not "never repeat yourself, ever" — echoing a
+ * point from months back is fine, near-identical text days apart isn't. As a
+ * side effect this also keeps the query cheap forever, since the candidate
+ * pool is bounded by posting cadence, not by how much history has piled up.
+ */
+export async function nearestLedgerMatch(
+  embedding: readonly number[],
+  opts: { excludeTopicId: string; windowDays: number },
+): Promise<LedgerMatch | null> {
+  const sql = getDb();
+  // created_at is stored as an ISO-8601 string, not a real timestamp column
+  // (a holdover from SQLite, which has no native datetime type) — ISO-8601
+  // sorts the same lexicographically as chronologically, so a plain text
+  // comparison against a JS-computed cutoff works correctly.
+  const cutoff = new Date(Date.now() - opts.windowDays * 24 * 60 * 60 * 1000).toISOString();
+  const [row] = await sql<Array<{ id: string; distance: number }>>`
+    SELECT id, embedding <=> ${toVectorLiteral(embedding)}::vector AS distance
+    FROM posts
+    WHERE embedding IS NOT NULL
+      AND (topic_id IS NULL OR topic_id != ${opts.excludeTopicId})
+      AND (
+        kind = 'seed'
+        OR (kind = 'generated' AND status = 'ok' AND approval != 'rejected' AND created_at >= ${cutoff})
+      )
+    ORDER BY distance ASC
+    LIMIT 1
+  `;
+  return row ? { postId: row.id, similarity: 1 - row.distance } : null;
+}
+
 export async function countEmbeddings(): Promise<number> {
   const sql = getDb();
   const [row] = await sql<[{ n: number }]>`

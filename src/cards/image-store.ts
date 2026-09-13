@@ -12,4 +12,6 @@ export interface ImageStore {
   find(key: string): Promise<StoredImage | null>;
   /** the raw bytes at `key`. Throws NotFoundError if there's nothing there. */
   get(key: string): Promise<Buffer>;
+  /** Remove the object at `key`. A no-op, not an error, if nothing is there. */
+  delete(key: string): Promise<void>;
 }

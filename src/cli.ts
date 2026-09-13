@@ -158,6 +158,22 @@ program
   .action((postId: string) => setPostApprovalFromCli(postId, "rejected"));
 
 program
+  .command("publish")
+  .argument("<post_id>")
+  .description("Mark an approved post published (manual — there's no unpublish)")
+  .action(async (postId: string) => {
+    const { publishPost } = await import("./store/posts.js");
+    try {
+      await migrate();
+      await publishPost(postId);
+      process.stdout.write(`${postId} → published\n`);
+    } catch (error) {
+      logger.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    }
+  });
+
+program
   .command("approve-all")
   .argument("<run_id>")
   .option("--include-flagged", "also approve posts flagged for dup or length")

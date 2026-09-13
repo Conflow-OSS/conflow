@@ -8,8 +8,10 @@ import { loadEnv } from "../config/load.js";
  * API routes or the worker handlers.
  */
 
-// "cards" = a batch for a whole run; "card" = one post, re-rendered on demand.
-export type JobType = "generate" | "regenerate" | "cards" | "card" | "seed";
+// "cards" is the only one of these three that's genuinely slow (many posts,
+// throttled by CARD_RENDER_DELAY_MS) — editing a post and rendering one card
+// are both fast enough to run synchronously in the API route instead.
+export type JobType = "generate" | "regenerate" | "cards" | "seed";
 
 export interface JobView {
   id: string;

@@ -1,5 +1,5 @@
 import { getImageStore } from "../cards/factory.js";
-import { generateCardsForRun, generateOneCard, imejisRenderer } from "../cards/run.js";
+import { generateCardsForRun, imejisRenderer } from "../cards/run.js";
 import { loadEnv } from "../config/load.js";
 import { getModel } from "../models/factory.js";
 import { regeneratePost } from "../pipeline/regenerate.js";
@@ -26,8 +26,6 @@ export async function handleJob(job: JobLike): Promise<unknown> {
       return handleRegenerate(job);
     case "cards":
       return handleCards(job);
-    case "card":
-      return handleCard(job);
     case "seed":
       return handleSeed(job);
     default:
@@ -71,12 +69,6 @@ async function handleCards(job: JobLike): Promise<unknown> {
     renderer: imejisRenderer,
     store: getImageStore(),
   });
-}
-
-async function handleCard(job: JobLike): Promise<unknown> {
-  await migrate();
-  const { postId } = job.data as { postId: string };
-  return generateOneCard({ postId, renderer: imejisRenderer, store: getImageStore() });
 }
 
 async function handleSeed(job: JobLike): Promise<unknown> {

@@ -7,9 +7,9 @@ import { insertPost } from "../store/posts.js";
 import { insertRun, setRunProgress, setRunStatus } from "../store/runs.js";
 import { insertTopic } from "../store/topics.js";
 import type { RunRow } from "../store/types.js";
-import { upsertEmbedding } from "../store/vec.js";
+import { nearestLedgerMatch, upsertEmbedding } from "../store/vec.js";
 import { logger } from "../util/logger.js";
-import { type EmbeddedPost, findDuplicate, loadLedgerEmbeddings } from "./dedup.js";
+import { type EmbeddedPost, findDuplicate } from "./dedup.js";
 import { expandAngleIntoLessons, expandStoryIntoTopics, expandTopicIntoAngles } from "./expand.js";
 import { type GeneratedPost, generatePost } from "./generate.js";
 import { loadTopicList, parseTopicList } from "./inputs.js";
@@ -32,7 +32,38 @@ export type ProgressReporter = (progress: RunProgress) => void | Promise<void>;
 
 function runConfig(model: ContentModel) {
   const env = loadEnv();
-  return { anglesPerTopic: env.GEN_Y, postsPerAngle: env.GEN_Z, model: model.model };
+  return { topicCount: env.GEN_X, anglesPerTopic: env.GEN_Y, postsPerAngle: env.GEN_Z, model: model.model };
+}
+
+export interface RunConfig {
+  topicCount: number;
+  anglesPerTopic: number;
+  postsPerAngle: number;
+}
+
+/**
+ * The run's own recorded config is the source of truth for how it executes —
+ * not a fresh `loadEnv()` read at execution time, which could silently differ
+ * from what was actually requested if the env changed between queuing and the
+ * worker picking it up. The CLI's entrypoints below build this from env
+ * directly (there's no per-invocation override there); the API lets a caller
+ * override any of the three explicitly, falling back to env per-field.
+ * Missing/malformed fields (e.g. a run row from before this existed) fall
+ * back to env too, so old rows keep working unchanged.
+ */
+export function parseRunConfig(configJson: string): RunConfig {
+  const env = loadEnv();
+  let parsed: Partial<RunConfig> = {};
+  try {
+    parsed = JSON.parse(configJson) as Partial<RunConfig>;
+  } catch {
+    // leave parsed empty — every field below falls back to env
+  }
+  return {
+    topicCount: parsed.topicCount ?? env.GEN_X,
+    anglesPerTopic: parsed.anglesPerTopic ?? env.GEN_Y,
+    postsPerAngle: parsed.postsPerAngle ?? env.GEN_Z,
+  };
 }
 
 // ── CLI entrypoints — read the input file, create the run row, then execute ──
@@ -104,7 +135,7 @@ export async function runGenerationForRun(
   onProgress?: ProgressReporter,
 ): Promise<MatrixRunResult> {
   await migrate();
-  const env = loadEnv();
+  const config = parseRunConfig(run.config_json);
 
   const report: ProgressReporter = async (progress) => {
     await setRunProgress(run.id, progress);
@@ -121,12 +152,20 @@ export async function runGenerationForRun(
       baseTopics = parseTopicList(story);
     } else {
       await report({ phase: "expanding", postsCreated: 0, postsExpected: 0 });
-      baseTopics = await expandStoryIntoTopics(story, env.GEN_X, model);
+      baseTopics = await expandStoryIntoTopics(story, config.topicCount, model);
       logger.info("story expanded into topics", { runId: run.id, count: baseTopics.length });
     }
 
     const sourceFacts = run.flow === "casestudy" ? story : undefined;
-    const result = await runMatrixLoop({ run, baseTopics, sourceFacts, model, report });
+    const result = await runMatrixLoop({
+      run,
+      baseTopics,
+      sourceFacts,
+      model,
+      report,
+      anglesPerTopic: config.anglesPerTopic,
+      postsPerAngle: config.postsPerAngle,
+    });
 
     await setRunStatus(run.id, "completed");
     await report({
@@ -153,12 +192,12 @@ async function runMatrixLoop(input: {
   sourceFacts?: string;
   model: ContentModel;
   report: ProgressReporter;
+  anglesPerTopic: number;
+  postsPerAngle: number;
 }): Promise<MatrixRunResult> {
   const env = loadEnv();
-  const { run, baseTopics, model, sourceFacts, report } = input;
+  const { run, baseTopics, model, sourceFacts, report, anglesPerTopic, postsPerAngle } = input;
 
-  const anglesPerTopic = env.GEN_Y;
-  const postsPerAngle = env.GEN_Z;
   const postsExpected = baseTopics.length * anglesPerTopic * postsPerAngle;
 
   logger.info("matrix run start", {
@@ -268,7 +307,6 @@ async function generateAndPersistLessons(input: {
 
   // Phase 2 — embed them all at once, then dedup-check and store each in order.
   const embeddings = await embedDocuments(generatedVariants.map((g) => g.variant.parsed.body));
-  const ledgerEmbeddings = await loadLedgerEmbeddings(input.topicId);
   const storedSiblingEmbeddings: EmbeddedPost[] = [];
 
   const totals = { created: 0, flaggedForLength: 0, flaggedAsDuplicate: 0 };
@@ -283,11 +321,15 @@ async function generateAndPersistLessons(input: {
     let duplicateScore: number | null = null;
 
     if (status === "ok") {
+      const ledgerMatch = await nearestLedgerMatch(embedding, {
+        excludeTopicId: input.topicId,
+        windowDays: env.DEDUP_LEDGER_WINDOW_DAYS,
+      });
       const match = findDuplicate({
         postEmbedding: embedding,
         siblingEmbeddings: storedSiblingEmbeddings,
-        ledgerEmbeddings,
         siblingThreshold: env.DEDUP_SIBLING_THRESHOLD,
+        ledgerMatch,
         ledgerThreshold: env.DEDUP_LEDGER_THRESHOLD,
       });
       if (match) {
