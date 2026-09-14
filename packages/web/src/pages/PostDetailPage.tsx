@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import { LoadingIcon } from "@/components/ui/loading-icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EditPostDialog } from "@/features/posts/EditPostDialog";
@@ -124,7 +125,10 @@ export function PostDetailPage() {
 
       {post.summary && (
         <div>
-          <p className="mb-1 text-sm font-medium text-muted-foreground">Summary</p>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <p className="text-sm font-medium text-muted-foreground">Summary</p>
+            <CopyButton variant="ghost" className="h-7 w-7" value={post.summary} label="Copy summary" />
+          </div>
           <p className="text-sm">{post.summary}</p>
         </div>
       )}
@@ -207,7 +211,10 @@ function PostContext({
 function PostBodyPanel({ label, body }: { label?: string; body: string }) {
   return (
     <div className="space-y-2">
-      {label && <p className="text-xs font-medium text-muted-foreground">{label}</p>}
+      <div className="flex items-center justify-between gap-2">
+        {label ? <p className="text-xs font-medium text-muted-foreground">{label}</p> : <span />}
+        <CopyButton variant="ghost" className="h-7 w-7" value={body} label="Copy post body" />
+      </div>
       <div className="rounded-lg border border-border bg-card p-4 [box-shadow:var(--shadow-s)]">
         <p className="whitespace-pre-line text-sm leading-relaxed">{body}</p>
       </div>
