@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LoadingIcon } from "@/components/ui/loading-icon";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { useCreateRun } from "@/features/runs/hooks";
@@ -64,7 +65,7 @@ export function GeneratePage() {
     return (
       <div className="mx-auto max-w-2xl p-6">
         <Card>
-          <CardContent className="space-y-4 text-center">
+          <CardContent className="space-y-4 pt-5 text-center">
             <Icon icon="feather:check-circle" className="mx-auto h-8 w-8 text-primary" />
             <div>
               <h1 className="text-lg font-semibold">Run queued</h1>
@@ -180,6 +181,7 @@ export function GeneratePage() {
         )}
 
         <Button type="submit" variant="primary" disabled={createRun.isPending} className="w-full">
+          {createRun.isPending && <LoadingIcon pending icon="feather:zap" />}
           {createRun.isPending ? "Queuing…" : "Generate"}
         </Button>
       </form>

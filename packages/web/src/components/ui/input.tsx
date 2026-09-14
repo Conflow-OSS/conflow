@@ -1,5 +1,6 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
+import { useTheme } from "@/lib/theme"
 
 import { BorderBeam } from "./border-beam"
 import { formFieldBase, formFieldSingleLine } from "./_shared"
@@ -10,6 +11,7 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
 
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, type, beam = true, ...props }, ref) => {
+    const { theme } = useTheme()
     const input = (
       <input
         type={type}
@@ -27,7 +29,7 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
     if (!beam) return input
 
     return (
-      <BorderBeam size="line" colorVariant="colorful" theme="dark" className="block w-full">
+      <BorderBeam size="line" colorVariant="colorful" theme={theme} className="block w-full">
         {input}
       </BorderBeam>
     )

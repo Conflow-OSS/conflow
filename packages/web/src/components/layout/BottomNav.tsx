@@ -13,7 +13,7 @@ export function BottomNav() {
   return (
     <nav
       className={cn(
-        "fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around",
+        "fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around md:hidden",
         "border-t border-border bg-card/90 backdrop-blur-md [box-shadow:var(--shadow-l)]",
         "pb-[env(safe-area-inset-bottom)]",
       )}

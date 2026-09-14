@@ -3,6 +3,7 @@ import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
+import { useTheme } from "@/lib/theme"
 
 import { BorderBeam } from "./border-beam"
 
@@ -75,6 +76,7 @@ const beamVariants = new Set(["default", "primary"])
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, beam, children, ...props }, ref) => {
+    const { theme } = useTheme()
     const Comp = asChild ? Slot : "button"
     const showBeam = beam ?? beamVariants.has(variant ?? "default")
     const button = (
@@ -91,7 +93,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     if (!showBeam) return button
 
     return (
-      <BorderBeam size="sm" colorVariant="colorful" theme="dark" className="inline-flex align-middle">
+      <BorderBeam size="sm" colorVariant="colorful" theme={theme} className="inline-flex align-middle">
         {button}
       </BorderBeam>
     )

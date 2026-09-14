@@ -1,9 +1,9 @@
 import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PostsView } from "@/features/posts/PostsView";
+import { RunProgressPanel } from "@/features/runs/RunProgressPanel";
 import { RunStatusBadge } from "@/features/runs/RunStatusBadge";
 import { useRun, useRunEvents, useRunPosts, useRunTopics } from "@/features/runs/hooks";
 
@@ -24,7 +24,7 @@ export function RunDetailPage() {
 
   const run = runQuery.data?.run;
   const isLive = run?.status === "queued" || run?.status === "running";
-  const { progress, terminal } = useRunEvents(runId, isLive);
+  const { terminal, log } = useRunEvents(runId, isLive);
 
   useEffect(() => {
     if (!terminal) return;
@@ -59,21 +59,7 @@ export function RunDetailPage() {
         {run.error && <p className="mt-2 text-sm text-destructive">{run.error}</p>}
       </div>
 
-      {isLive && (
-        <div className="rounded-lg border border-border bg-card p-4 [box-shadow:var(--shadow-s)]">
-          <p className="mb-2 text-sm text-muted-foreground">
-            {progress ? describePhase(progress.phase) : "Waiting for the worker to pick this up…"}
-          </p>
-          {progress && progress.postsExpected > 0 && (
-            <>
-              <Progress value={(progress.postsCreated / progress.postsExpected) * 100} />
-              <p className="mt-1 text-xs text-muted-foreground">
-                {progress.postsCreated} / {progress.postsExpected} posts
-              </p>
-            </>
-          )}
-        </div>
-      )}
+      {isLive && <RunProgressPanel log={log} isLive={isLive} />}
 
       <div>
         <h2 className="mb-2 text-sm font-medium text-muted-foreground">
@@ -102,17 +88,4 @@ export function RunDetailPage() {
       </div>
     </div>
   );
-}
-
-function describePhase(phase: string): string {
-  switch (phase) {
-    case "expanding":
-      return "Expanding the story into topics…";
-    case "generating":
-      return "Generating posts…";
-    case "done":
-      return "Wrapping up…";
-    default:
-      return "Working…";
-  }
 }

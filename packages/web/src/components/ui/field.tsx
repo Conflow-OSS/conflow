@@ -11,7 +11,7 @@ interface FieldProps extends React.HTMLAttributes<HTMLDivElement> {}
 
 const Field = React.forwardRef<HTMLDivElement, FieldProps>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn("flex flex-col gap-1.5", className)} {...props} />
+    <div ref={ref} className={cn("flex flex-col gap-3", className)} {...props} />
   )
 )
 Field.displayName = "Field"

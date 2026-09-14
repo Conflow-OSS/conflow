@@ -1,11 +1,11 @@
 import type { Approval } from "@content-engine/shared";
-import { Icon } from "@iconify/react";
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { LoadingIcon } from "@/components/ui/loading-icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PostsView } from "@/features/posts/PostsView";
 import { useBulkApproval, useBulkPublish, usePosts } from "@/features/posts/hooks";
@@ -134,15 +134,15 @@ export function PostsPage() {
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card p-3 [box-shadow:var(--shadow-s)]">
           <span className="text-sm font-medium">{selectedIds.size} selected</span>
           <Button size="sm" variant="primary" disabled={bulkPending} onClick={() => handleBulkApproval("approved")}>
-            <Icon icon="feather:check" className="h-4 w-4" />
+            <LoadingIcon pending={bulkApproval.isPending && bulkApproval.variables?.approval === "approved"} icon="feather:check" />
             Approve
           </Button>
           <Button size="sm" variant="destructive" disabled={bulkPending} onClick={() => handleBulkApproval("rejected")}>
-            <Icon icon="feather:x" className="h-4 w-4" />
+            <LoadingIcon pending={bulkApproval.isPending && bulkApproval.variables?.approval === "rejected"} icon="feather:x" />
             Reject
           </Button>
           <Button size="sm" variant="outline" disabled={bulkPending} onClick={handleBulkPublish}>
-            <Icon icon="feather:send" className="h-4 w-4" />
+            <LoadingIcon pending={bulkPublish.isPending} icon="feather:send" />
             Publish
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>

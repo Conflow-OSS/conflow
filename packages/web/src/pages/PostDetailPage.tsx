@@ -2,12 +2,14 @@ import { Icon } from "@iconify/react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { LoadingIcon } from "@/components/ui/loading-icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EditPostDialog } from "@/features/posts/EditPostDialog";
 import { PostBadges } from "@/features/posts/PostBadges";
 import { RegenerateAction } from "@/features/posts/RegenerateAction";
-import { RelatedPostLink } from "@/features/posts/RelatedPostLink";
+import { RelatedPostPanel } from "@/features/posts/RelatedPostPanel";
 import { usePost, usePublishPost, useRenderCard, useSetApproval } from "@/features/posts/hooks";
+import { cn } from "@/lib/utils";
 
 export function PostDetailPage() {
   const { postId } = useParams<{ postId: string }>();
@@ -52,10 +54,18 @@ export function PostDetailPage() {
     });
   }
 
-  const canPublish = post.approval === "approved" && !post.published_at;
+  const isPublished = !!post.published_at;
+  const canPublish = post.approval === "approved" && !isPublished;
+
+  const relatedId =
+    post.status === "flag_dup" ? post.dup_of_id : post.status === "regenerated" ? post.superseded_by_id : null;
+  const relatedLabel =
+    post.status === "flag_dup"
+      ? `Matched duplicate${post.dup_score ? ` (${Math.round(post.dup_score * 100)}% match)` : ""}`
+      : "Superseded by";
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 p-6">
+    <div className={cn("mx-auto space-y-6 p-6", relatedId ? "max-w-6xl" : "max-w-3xl")}>
       <div>
         <Link to={post.run_id ? `/runs/${post.run_id}` : "/posts"} className="text-xs text-muted-foreground hover:underline">
           <Icon icon="feather:arrow-left" className="mr-1 inline h-3 w-3" />
@@ -71,16 +81,14 @@ export function PostDetailPage() {
         {post.topic_angle && <p className="mt-1 text-sm text-muted-foreground">{post.topic_angle}</p>}
       </div>
 
-      {post.status === "flag_dup" && post.dup_of_id && (
-        <RelatedPostLink postId={post.dup_of_id} label={`Flagged as a duplicate${post.dup_score ? ` (${Math.round(post.dup_score * 100)}% match)` : ""}`} />
+      {relatedId ? (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <PostBodyPanel label="This post" body={post.body} />
+          <RelatedPostPanel postId={relatedId} label={relatedLabel} />
+        </div>
+      ) : (
+        <PostBodyPanel body={post.body} />
       )}
-      {post.status === "regenerated" && post.superseded_by_id && (
-        <RelatedPostLink postId={post.superseded_by_id} label="Superseded by" />
-      )}
-
-      <div className="rounded-lg border border-border bg-card p-4 [box-shadow:var(--shadow-s)]">
-        <p className="whitespace-pre-line text-sm leading-relaxed">{post.body}</p>
-      </div>
 
       {post.image_url && (
         <div>
@@ -106,31 +114,47 @@ export function PostDetailPage() {
           disabled={setApproval.isPending || post.approval === "approved"}
           onClick={() => handleApproval("approved")}
         >
-          <Icon icon="feather:check" className="h-4 w-4" />
-          Approve
+          <LoadingIcon pending={setApproval.isPending} icon="feather:check" />
+          {setApproval.isPending ? "Approving…" : "Approve"}
         </Button>
         <Button
           variant={post.approval === "rejected" ? "secondary" : "destructive"}
-          disabled={setApproval.isPending || post.approval === "rejected"}
+          disabled={setApproval.isPending || post.approval === "rejected" || isPublished}
           onClick={() => handleApproval("rejected")}
         >
-          <Icon icon="feather:x" className="h-4 w-4" />
-          Reject
+          <LoadingIcon pending={setApproval.isPending} icon="feather:x" />
+          {setApproval.isPending ? "Rejecting…" : "Reject"}
         </Button>
         <Button variant="outline" disabled={!canPublish || publish.isPending} onClick={handlePublish}>
-          <Icon icon="feather:send" className="h-4 w-4" />
-          {post.published_at ? "Published" : "Mark published"}
+          <LoadingIcon pending={publish.isPending} icon="feather:send" />
+          {publish.isPending ? "Publishing…" : post.published_at ? "Published" : "Mark published"}
         </Button>
-        <EditPostDialog post={post} />
-        <Button variant="outline" disabled={!post.summary || renderCard.isPending} onClick={handleRenderCard}>
-          <Icon icon="feather:image" className="h-4 w-4" />
-          {post.image_url ? "Re-render card" : "Render card"}
+        <EditPostDialog post={post} disabled={isPublished} />
+        <Button variant="outline" disabled={!post.summary || renderCard.isPending || isPublished} onClick={handleRenderCard}>
+          <LoadingIcon pending={renderCard.isPending} icon="feather:image" />
+          {renderCard.isPending ? "Rendering…" : post.image_url ? "Re-render card" : "Render card"}
         </Button>
-        {post.kind === "generated" && post.status !== "regenerated" && <RegenerateAction postId={post.id} />}
+        {post.kind === "generated" && post.status !== "regenerated" && !isPublished && <RegenerateAction postId={post.id} />}
       </div>
+      {isPublished && (
+        <p className="text-xs text-muted-foreground">
+          This post is published — editing, rejecting, re-rendering the card, and regenerating are locked.
+        </p>
+      )}
       {!canPublish && !post.published_at && (
         <p className="text-xs text-muted-foreground">Approve the post before publishing.</p>
       )}
+    </div>
+  );
+}
+
+function PostBodyPanel({ label, body }: { label?: string; body: string }) {
+  return (
+    <div className="space-y-2">
+      {label && <p className="text-xs font-medium text-muted-foreground">{label}</p>}
+      <div className="rounded-lg border border-border bg-card p-4 [box-shadow:var(--shadow-s)]">
+        <p className="whitespace-pre-line text-sm leading-relaxed">{body}</p>
+      </div>
     </div>
   );
 }

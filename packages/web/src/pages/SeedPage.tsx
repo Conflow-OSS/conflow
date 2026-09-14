@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { LoadingIcon } from "@/components/ui/loading-icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useAddSeedPost, useDeleteSeedPost, useSeedPosts } from "@/features/seed/hooks";
@@ -61,7 +62,7 @@ export function SeedPage() {
       </div>
 
       <Card>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-3 pt-5">
           <Field>
             <FieldLabel>Add a seed post</FieldLabel>
             <Textarea
@@ -73,6 +74,7 @@ export function SeedPage() {
             <FieldDescription>{newBody.length} characters</FieldDescription>
           </Field>
           <Button variant="primary" disabled={!newBody.trim() || addSeedPost.isPending} onClick={handleAdd}>
+            {addSeedPost.isPending && <LoadingIcon pending icon="feather:plus" />}
             {addSeedPost.isPending ? "Adding…" : "Add"}
           </Button>
         </CardContent>
@@ -90,7 +92,7 @@ export function SeedPage() {
         <div className="space-y-3">
           {posts.map((post) => (
             <Card key={post.id}>
-              <CardContent className="flex items-start justify-between gap-4">
+              <CardContent className="flex items-start justify-between gap-4 pt-5">
                 <div className="min-w-0">
                   <p className="whitespace-pre-line text-sm leading-relaxed">{post.body}</p>
                   <p className="mt-2 text-xs text-muted-foreground">

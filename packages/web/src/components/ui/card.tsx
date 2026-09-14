@@ -1,5 +1,6 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
+import { useTheme } from "@/lib/theme"
 
 import { BorderBeam } from "./border-beam"
 
@@ -16,6 +17,7 @@ interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
 
 const Card = React.forwardRef<HTMLDivElement, CardProps>(
   ({ className, interactive, beam = true, children, ...props }, ref) => {
+    const { theme } = useTheme()
     const card = (
       <div
         ref={ref}
@@ -35,7 +37,7 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
     if (!beam) return card
 
     return (
-      <BorderBeam size="md" colorVariant="colorful" theme="dark" className="block">
+      <BorderBeam size="md" colorVariant="colorful" theme={theme} className="block">
         {card}
       </BorderBeam>
     )

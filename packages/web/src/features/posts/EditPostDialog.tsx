@@ -13,10 +13,11 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
+import { LoadingIcon } from "@/components/ui/loading-icon";
 import { Textarea } from "@/components/ui/textarea";
 import { useEditPost } from "./hooks";
 
-export function EditPostDialog({ post }: { post: PostRow }) {
+export function EditPostDialog({ post, disabled }: { post: PostRow; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState(post.body);
   const [summary, setSummary] = useState(post.summary ?? "");
@@ -50,7 +51,7 @@ export function EditPostDialog({ post }: { post: PostRow }) {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button variant="outline">
+        <Button variant="outline" disabled={disabled}>
           <Icon icon="feather:edit-2" className="h-4 w-4" />
           Edit
         </Button>
@@ -86,6 +87,7 @@ export function EditPostDialog({ post }: { post: PostRow }) {
             Cancel
           </Button>
           <Button variant="primary" disabled={editPost.isPending} onClick={handleSave}>
+            {editPost.isPending && <LoadingIcon pending icon="feather:save" />}
             {editPost.isPending ? "Saving…" : "Save"}
           </Button>
         </DialogFooter>

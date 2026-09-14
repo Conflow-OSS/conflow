@@ -59,25 +59,31 @@
     --color-destructive-foreground: var(--destructive-foreground);
 }
 
+/*
+ * Light mode — mirrors .dark's hue (325, the Beam Lib magenta accent) at
+ * inverted lightness. Beam Lib's own kit ships dark-only, so this palette
+ * doesn't come from the design system generator; it's a from-scratch light
+ * variant tuned to keep the same glass-card + soft-shadow language.
+ */
 :root {
-    --background: oklch(0.13 0.012 325);
-    --foreground: oklch(0.975 0.01 325);
-    --card: oklch(0.17 0.015 325 / 0.68);
-    --card-foreground: oklch(0.97 0.005 280);
-    --popover: oklch(0.17 0 0);
-    --popover-foreground: oklch(0.97 0.005 280);
-    --primary: oklch(0.66 0.24 325);
+    --background: oklch(0.98 0.006 325);
+    --foreground: oklch(0.17 0.014 325);
+    --card: oklch(1 0 0 / 0.72);
+    --card-foreground: oklch(0.19 0.01 280);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.19 0.01 280);
+    --primary: oklch(0.58 0.22 325);
     --primary-foreground: oklch(0.99 0 0);
-    --secondary: oklch(0.21 0.016 325 / 0.72);
-    --secondary-foreground: oklch(0.92 0 0);
-    --muted: oklch(0.19 0.014 325 / 0.72);
-    --muted-foreground: oklch(0.7 0.01 325);
-    --accent: oklch(0.24 0.05 325 / 0.85);
-    --accent-foreground: oklch(0.97 0.012 325);
-    --destructive: oklch(0.63 0.2 20);
-    --border: oklch(0.92 0.018 325 / 0.12);
-    --input: oklch(0.92 0.016 325 / 0.08);
-    --ring: oklch(0.69 0.22 325);
+    --secondary: oklch(0.95 0.012 325 / 0.9);
+    --secondary-foreground: oklch(0.27 0.012 325);
+    --muted: oklch(0.955 0.008 325);
+    --muted-foreground: oklch(0.47 0.015 325);
+    --accent: oklch(0.93 0.03 325 / 0.85);
+    --accent-foreground: oklch(0.24 0.02 325);
+    --destructive: oklch(0.58 0.22 20);
+    --border: oklch(0.15 0.02 325 / 0.10);
+    --input: oklch(0.15 0.02 325 / 0.06);
+    --ring: oklch(0.58 0.22 325);
     --chart-1: var(--primary);
     --chart-2: oklch(from var(--primary) calc(l - 0.09) calc(c * 0.92) h);
     --chart-3: oklch(from var(--primary) calc(l - 0.18) calc(c * 0.84) h);
@@ -92,14 +98,14 @@
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
-    --destructive-foreground: oklch(0.97 0 0);
-    --shadow-s: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(20, 14, 28, 0.38);
-    --shadow-m: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 4px rgba(24, 16, 34, 0.42), 0 6px 16px rgba(18, 10, 28, 0.18);
-    --shadow-l: inset 0 1px 0 rgba(255, 255, 255, 0.10), 0 6px 12px rgba(24, 16, 34, 0.48), 0 16px 32px rgba(18, 10, 28, 0.22);
-    --shadow-inset: inset 0 1px 2px rgba(16, 10, 24, 0.36), inset 0 -1px 0 rgba(255, 255, 255, 0.05);
-    --shadow-button: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 0 1px rgba(255, 255, 255, 0.05), 0 1px 2px rgba(20, 14, 28, 0.42);
-    --shadow-button-hover: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 0 0 1px rgba(255, 255, 255, 0.08), 0 2px 4px rgba(24, 16, 34, 0.46);
-    --shadow-primary: inset 0 1px 0 rgba(255, 255, 255, 0.20), 0 0 0 1px rgba(216, 118, 198, 0.22), 0 1px 3px rgba(20, 14, 28, 0.42), 0 8px 24px rgba(140, 62, 126, 0.20);
+    --destructive-foreground: oklch(0.99 0 0);
+    --shadow-s: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 1px 2px rgba(16, 10, 24, 0.06);
+    --shadow-m: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 2px 4px rgba(16, 10, 24, 0.06), 0 6px 16px rgba(16, 10, 24, 0.05);
+    --shadow-l: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 6px 12px rgba(16, 10, 24, 0.07), 0 16px 32px rgba(16, 10, 24, 0.06);
+    --shadow-inset: inset 0 1px 2px rgba(16, 10, 24, 0.05), inset 0 -1px 0 rgba(255, 255, 255, 0.4);
+    --shadow-button: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 0 0 1px rgba(16, 10, 24, 0.04), 0 1px 2px rgba(16, 10, 24, 0.08);
+    --shadow-button-hover: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 0 0 1px rgba(16, 10, 24, 0.06), 0 2px 4px rgba(16, 10, 24, 0.1);
+    --shadow-primary: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 0 1px rgba(140, 62, 126, 0.18), 0 1px 3px rgba(16, 10, 24, 0.12), 0 8px 24px rgba(140, 62, 126, 0.16);
     --font-sans: ui-sans-serif, system-ui, sans-serif;
     --font-serif: ui-serif, Georgia, 'Times New Roman', serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -161,4 +167,14 @@
   html {
     @apply font-sans;
     }
+  /* No spinner arrows on number inputs — this app's number fields are small overrides, not counters. */
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
 }

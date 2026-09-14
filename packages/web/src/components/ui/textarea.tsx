@@ -1,6 +1,7 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import { useTheme } from "@/lib/theme"
 
 import { BorderBeam } from "./border-beam"
 import { formFieldBase, formFieldMultiLine } from "./_shared"
@@ -11,6 +12,7 @@ export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextArea
 
 const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className, beam = true, ...props }, ref) => {
+    const { theme } = useTheme()
     const textarea = (
       <textarea
         ref={ref}
@@ -22,7 +24,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
     if (!beam) return textarea
 
     return (
-      <BorderBeam size="md" colorVariant="colorful" theme="dark" className="block w-full">
+      <BorderBeam size="md" colorVariant="colorful" theme={theme} className="block w-full">
         {textarea}
       </BorderBeam>
     )

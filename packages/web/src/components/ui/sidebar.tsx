@@ -16,7 +16,7 @@ const Sidebar = React.forwardRef<HTMLElement, SidebarProps>(
     <aside
       ref={ref}
       className={cn(
-        "flex h-full w-64 flex-col",
+        "flex w-64 flex-col self-stretch",
         "bg-card text-card-foreground border-r border-border",
         "[box-shadow:var(--shadow-s)]",
         className

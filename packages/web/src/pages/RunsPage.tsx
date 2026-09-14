@@ -42,7 +42,7 @@ export function RunsPage() {
           {runs.map(({ run, counts }) => (
             <Link key={run.id} to={`/runs/${run.id}`} className="block">
               <Card className="cursor-pointer transition-shadow hover:[box-shadow:var(--shadow-l)]">
-                <CardContent className="flex items-center justify-between gap-4">
+                <CardContent className="flex items-center justify-between gap-4 pt-5">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium capitalize">{run.flow}</span>

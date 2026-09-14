@@ -29,19 +29,21 @@ export function AppShell() {
   const statusLabel = health.isLoading ? "Checking…" : health.data?.ok ? "Connected" : "Unreachable";
 
   return (
-    <div className="flex min-h-svh bg-background text-foreground">
+    <div className="flex h-svh overflow-hidden bg-background text-foreground">
       {/* Desktop / tablet — sidebar, ≥768px (md:) */}
       <Sidebar className="hidden md:flex">
         <SidebarHeader>
           <span className="text-sm font-semibold tracking-tight">content-engine</span>
         </SidebarHeader>
         <SidebarContent>
-          <Button asChild className="mb-3 w-full justify-center" variant="primary">
-            <NavLink to="/generate">
-              <Icon icon="feather:plus" className="h-4 w-4" />
-              Generate a run
-            </NavLink>
-          </Button>
+          <div className="mb-3">
+            <Button asChild className="w-full justify-center" variant="primary">
+              <NavLink to="/generate">
+                <Icon icon="feather:plus" className="h-4 w-4" />
+                Generate a run
+              </NavLink>
+            </Button>
+          </div>
           <SidebarGroup>
             <SidebarGroupLabel>Browse</SidebarGroupLabel>
             {NAV_ITEMS.map((item) => (
