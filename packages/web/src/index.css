@@ -178,3 +178,18 @@
     margin: 0;
   }
 }
+
+/* react-masonry-css's required container/column CSS — see PostsView.tsx.
+   Gutter matches the app's gap-4 (1rem) convention used elsewhere. */
+.masonry-grid {
+  display: flex;
+  margin-left: -1rem;
+  width: auto;
+}
+.masonry-grid_column {
+  padding-left: 1rem;
+  background-clip: padding-box;
+}
+.masonry-grid_column > * {
+  margin-bottom: 1rem;
+}

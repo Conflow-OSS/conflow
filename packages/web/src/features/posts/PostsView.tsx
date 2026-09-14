@@ -1,5 +1,6 @@
 import type { PostRow, TopicRow } from "@content-engine/shared";
 import { Icon } from "@iconify/react";
+import Masonry from "react-masonry-css";
 import { useSearchParams } from "react-router-dom";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -8,6 +9,11 @@ import { PostsTable } from "./PostsTable";
 import type { PostSelection } from "./selection";
 
 type ViewMode = "table" | "grid";
+
+// Mirrors the grid-cols-1/sm:grid-cols-2/xl:grid-cols-3 breakpoints this
+// replaced — react-masonry-css keys are max-width thresholds (window width
+// <= key), the mirror image of Tailwind's min-width sm:/xl: prefixes.
+const MASONRY_BREAKPOINTS = { default: 3, 1279: 2, 639: 1 };
 
 /**
  * The layout choice lives in the URL (?view=) once the user picks one, not
@@ -62,11 +68,11 @@ export function PostsView({
       {view === "table" ? (
         <PostsTable posts={posts} topicsById={topicsById} selection={selection} />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <Masonry breakpointCols={MASONRY_BREAKPOINTS} className="masonry-grid" columnClassName="masonry-grid_column">
           {posts.map((post) => (
             <PostCard key={post.id} post={post} selection={selection} />
           ))}
-        </div>
+        </Masonry>
       )}
     </div>
   );
