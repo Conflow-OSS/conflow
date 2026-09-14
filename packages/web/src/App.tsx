@@ -6,6 +6,7 @@ import { PostsPage } from "@/pages/PostsPage";
 import { RunDetailPage } from "@/pages/RunDetailPage";
 import { RunsPage } from "@/pages/RunsPage";
 import { SeedPage } from "@/pages/SeedPage";
+import { TopicsPage } from "@/pages/TopicsPage";
 
 export function App() {
   return (
@@ -16,6 +17,7 @@ export function App() {
         <Route path="/runs/:runId" element={<RunDetailPage />} />
         <Route path="/posts" element={<PostsPage />} />
         <Route path="/posts/:postId" element={<PostDetailPage />} />
+        <Route path="/topics" element={<TopicsPage />} />
         <Route path="/seed" element={<SeedPage />} />
         <Route path="/generate" element={<GeneratePage />} />
       </Route>

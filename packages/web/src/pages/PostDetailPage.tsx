@@ -1,5 +1,5 @@
 import { Icon } from "@iconify/react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { LoadingIcon } from "@/components/ui/loading-icon";
@@ -14,6 +14,13 @@ import { cn } from "@/lib/utils";
 export function PostDetailPage() {
   const { postId } = useParams<{ postId: string }>();
   if (!postId) throw new Error("PostDetailPage rendered without a postId param");
+
+  const location = useLocation();
+  const navigate = useNavigate();
+  // location.key is "default" only when there's no in-app history to go back
+  // to (a direct link or a fresh page load) — fall back to the run/posts
+  // page in that case rather than navigating the user out of the app.
+  const canGoBack = location.key !== "default";
 
   const postQuery = usePost(postId);
   const setApproval = useSetApproval(postId);
@@ -67,10 +74,20 @@ export function PostDetailPage() {
   return (
     <div className={cn("mx-auto space-y-6 p-6", relatedId ? "max-w-6xl" : "max-w-3xl")}>
       <div>
-        <Link to={post.run_id ? `/runs/${post.run_id}` : "/posts"} className="text-xs text-muted-foreground hover:underline">
-          <Icon icon="feather:arrow-left" className="mr-1 inline h-3 w-3" />
-          {post.run_id ? "Back to run" : "Back to posts"}
-        </Link>
+        {canGoBack ? (
+          <button
+            onClick={() => navigate(-1)}
+            className="text-xs text-muted-foreground hover:underline"
+          >
+            <Icon icon="feather:arrow-left" className="mr-1 inline h-3 w-3" />
+            Back
+          </button>
+        ) : (
+          <Link to={post.run_id ? `/runs/${post.run_id}` : "/posts"} className="text-xs text-muted-foreground hover:underline">
+            <Icon icon="feather:arrow-left" className="mr-1 inline h-3 w-3" />
+            {post.run_id ? "Back to run" : "Back to posts"}
+          </Link>
+        )}
         <div className="mt-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <h1 className="text-lg font-semibold capitalize">{post.format} post</h1>

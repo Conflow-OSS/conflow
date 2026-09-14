@@ -33,7 +33,7 @@ export function AppShell() {
       {/* Desktop / tablet — sidebar, ≥768px (md:) */}
       <Sidebar className="hidden md:flex">
         <SidebarHeader>
-          <span className="text-sm font-semibold tracking-tight">content-engine</span>
+          <span className="text-sm font-semibold tracking-tight">Conflow</span>
         </SidebarHeader>
         <SidebarContent>
           <div className="mb-3">

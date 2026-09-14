@@ -1,6 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { searchTopics } from "./api";
+import { listTopics, searchTopics, type TopicListFilter } from "./api";
+
+export function useTopics(filter: TopicListFilter) {
+  return useQuery({ queryKey: ["topics", "list", filter], queryFn: () => listTopics(filter) });
+}
 
 /** Debounces the raw input so keystrokes don't each fire a request. */
 function useDebounced<T>(value: T, delayMs: number): T {

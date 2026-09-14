@@ -2,6 +2,7 @@ import type { PostRow, TopicRow } from "@content-engine/shared";
 import { Icon } from "@iconify/react";
 import { useSearchParams } from "react-router-dom";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { PostCard } from "./PostCard";
 import { PostsTable } from "./PostsTable";
 import type { PostSelection } from "./selection";
@@ -9,9 +10,11 @@ import type { PostSelection } from "./selection";
 type ViewMode = "table" | "grid";
 
 /**
- * The layout choice lives in the URL (?view=), not local state — so a link
- * to "this run's posts in grid view" is a real, shareable/bookmarkable URL,
- * consistent with how filters (M5) work too.
+ * The layout choice lives in the URL (?view=) once the user picks one, not
+ * local state — so a link to "this run's posts in grid view" is a real,
+ * shareable/bookmarkable URL, consistent with how filters (M5) work too.
+ * Before an explicit choice, the default follows the viewport: grid on
+ * phones (a dense table doesn't fit), table on desktop.
  */
 export function PostsView({
   posts,
@@ -25,7 +28,10 @@ export function PostsView({
   selection?: PostSelection;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const view: ViewMode = searchParams.get("view") === "grid" ? "grid" : "table";
+  const isMobile = useIsMobile();
+  const explicitView = searchParams.get("view");
+  const view: ViewMode =
+    explicitView === "grid" || explicitView === "table" ? explicitView : isMobile ? "grid" : "table";
 
   const setView = (next: string) => {
     if (!next) return; // ToggleGroup fires "" when re-clicking the active item — ignore
