@@ -85,8 +85,8 @@ that one point.
        "I'm Prince, a DevOps & Cloud Platform Engineer, saving your business money on their
        Cloud expenses, and helping your products support MILLIONS of customers at 99.9%
        availability and low-latency
-       I've reduced Cloud Network costs from $2,200/month to $100/month, and Logging costs
-       from $300/day to <$1/day, and would love to do the same for your Cloud infrastructure :)"
+       
+       I've reduced Cloud Network costs from $2,200/month to $100/month, and have built ETL pipelines on the Cloud which have processed millions of blockchain transactions/hour, and would love to do the same for your Cloud infrastructure :)"
 7. HASHTAGS — 6–12 from the pool, most-relevant first, on the final line.
 
   HOOK VARIANT A — "questions"   (HOOK_STYLE = questions)
