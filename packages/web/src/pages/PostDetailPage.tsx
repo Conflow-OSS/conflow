@@ -11,6 +11,7 @@ import { RegenerateAction } from "@/features/posts/RegenerateAction";
 import { RelatedPostPanel } from "@/features/posts/RelatedPostPanel";
 import { usePost, usePublishPost, useRenderCard, useSetApproval } from "@/features/posts/hooks";
 import { useRunTopics } from "@/features/runs/hooks";
+import { toClipboardSafeText } from "@/lib/text";
 import { cn } from "@/lib/utils";
 
 export function PostDetailPage() {
@@ -127,7 +128,7 @@ export function PostDetailPage() {
         <div>
           <div className="mb-1 flex items-center justify-between gap-2">
             <p className="text-sm font-medium text-muted-foreground">Summary</p>
-            <CopyButton variant="ghost" className="h-7 w-7" value={post.summary} label="Copy summary" />
+            <CopyButton variant="ghost" className="h-7 w-7" value={toClipboardSafeText(post.summary)} label="Copy summary" />
           </div>
           <p className="text-sm">{post.summary}</p>
         </div>
@@ -213,7 +214,7 @@ function PostBodyPanel({ label, body }: { label?: string; body: string }) {
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         {label ? <p className="text-xs font-medium text-muted-foreground">{label}</p> : <span />}
-        <CopyButton variant="ghost" className="h-7 w-7" value={body} label="Copy post body" />
+        <CopyButton variant="ghost" className="h-7 w-7" value={toClipboardSafeText(body)} label="Copy post body" />
       </div>
       <div className="rounded-lg border border-border bg-card p-4 [box-shadow:var(--shadow-s)]">
         <p className="whitespace-pre-line text-sm leading-relaxed">{body}</p>

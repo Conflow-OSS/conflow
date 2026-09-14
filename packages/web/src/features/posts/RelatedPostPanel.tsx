@@ -2,6 +2,7 @@ import { Icon } from "@iconify/react";
 import { Link } from "react-router-dom";
 import { CopyButton } from "@/components/ui/copy-button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toClipboardSafeText } from "@/lib/text";
 import { usePost } from "./hooks";
 
 /**
@@ -26,7 +27,7 @@ export function RelatedPostPanel({ postId, label }: { postId: string; label: str
           <Link to={`/posts/${postId}`} className="text-xs text-muted-foreground hover:text-foreground hover:underline">
             Open standalone
           </Link>
-          {post && <CopyButton variant="ghost" className="h-7 w-7" value={post.body} label="Copy post body" />}
+          {post && <CopyButton variant="ghost" className="h-7 w-7" value={toClipboardSafeText(post.body)} label="Copy post body" />}
         </div>
       </div>
       {isLoading || !post ? (
