@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/ui/copy-button";
 import { LoadingIcon } from "@/components/ui/loading-icon";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DownloadImageButton } from "@/features/posts/DownloadImageButton";
 import { EditPostDialog } from "@/features/posts/EditPostDialog";
 import { PostBadges } from "@/features/posts/PostBadges";
 import { RegenerateAction } from "@/features/posts/RegenerateAction";
@@ -120,7 +121,10 @@ export function PostDetailPage() {
       {post.image_url && (
         <div>
           <p className="mb-2 text-sm font-medium text-muted-foreground">Card image</p>
-          <img src={post.image_url} alt="" className="w-full max-w-sm rounded-md border border-border" />
+          <div className="relative w-full max-w-sm">
+            <img src={post.image_url} alt="" className="w-full rounded-md border border-border" />
+            <DownloadImageButton imageUrl={post.image_url} filename={`post-${post.id}.png`} />
+          </div>
         </div>
       )}
 
