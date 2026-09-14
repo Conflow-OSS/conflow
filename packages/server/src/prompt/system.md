@@ -79,9 +79,14 @@ that one point.
    If you catch yourself writing one, delete it entirely and move on to the "I'm Prince"
    sentence. (An occasional one-clause observation tied to a SPECIFIC detail from this
    post can stay; a general truism never can.)
-   Then: ONE sentence of who Prince is — vary the wording; model: "I'm Prince, a DevOps &
-   Cloud Platform Engineer, sharing tips to improve company infrastructure and become a
-   better DevOps Engineer". Then ONE short, plain line inviting thoughts / tips in the comments.
+   Then two short sentences: who Prince is, then a concrete before/after cost result as a
+   soft pitch. Vary the wording each time, but keep the substance — these are real numbers,
+   not filler. Model:
+       "I'm Prince, a DevOps & Cloud Platform Engineer, saving your business money on their
+       Cloud expenses, and helping your products support MILLIONS of customers at 99.9%
+       availability and low-latency
+       I've reduced Cloud Network costs from $2,200/month to $100/month, and Logging costs
+       from $300/day to <$1/day, and would love to do the same for your Cloud infrastructure :)"
 7. HASHTAGS — 6–12 from the pool, most-relevant first, on the final line.
 
   HOOK VARIANT A — "questions"   (HOOK_STYLE = questions)
