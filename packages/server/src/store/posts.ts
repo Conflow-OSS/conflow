@@ -121,10 +121,27 @@ export async function getPost(id: string): Promise<PostRow | undefined> {
   return row;
 }
 
+/**
+ * A run's posts, interleaved across topics rather than grouped by topic —
+ * variants of the same topic/angle are the ones most likely to read as
+ * near-duplicates, so listing them consecutively makes a review pass harder
+ * than it needs to be. `wave` is "the Nth post created for this topic";
+ * ordering by wave first visits topic A's 1st post, topic B's 1st, topic
+ * C's 1st, ... before circling back to anyone's 2nd. Newest topic wins
+ * ties within a wave (topic_id is a ULID, so DESC ~= newest-created-first).
+ * Deterministic — no randomness — so the order is stable across repeat
+ * visits and safe to paginate.
+ */
 export async function listByRun(runId: string): Promise<PostRow[]> {
   const sql = getDb();
   return sql.unsafe<PostRow[]>(
-    `SELECT ${COLUMNS} FROM posts WHERE run_id = $1 ORDER BY created_at`,
+    `SELECT ${COLUMNS} FROM (
+       SELECT ${COLUMNS},
+         ROW_NUMBER() OVER (PARTITION BY COALESCE(topic_id, id) ORDER BY created_at) AS wave
+       FROM posts
+       WHERE run_id = $1
+     ) ranked
+     ORDER BY wave, topic_id DESC, created_at DESC`,
     [runId],
   );
 }
@@ -362,6 +379,12 @@ export interface PostListFilter {
  * fetch, since this is paginated: filtering post-fetch would silently break
  * `limit`/`offset` (a page could come back short, or double-count across
  * pages) once more than one page of results exists.
+ *
+ * Ordering interleaves across topics the same way `listByRun` does — see
+ * that function's comment. `topic_id` is a ULID (scoped uniquely per topic
+ * row regardless of which run it belongs to), so it's a safe cross-run
+ * partition/tiebreak key here too, and stays deterministic under
+ * limit/offset the way ORDER BY created_at DESC was before.
  */
 export async function listPosts(filter: PostListFilter): Promise<{ posts: PostRow[]; total: number }> {
   const sql = getDb();
@@ -394,8 +417,13 @@ export async function listPosts(filter: PostListFilter): Promise<{ posts: PostRo
 
   const [posts, [{ n }]] = await Promise.all([
     sql.unsafe<PostRow[]>(
-      `SELECT ${COLUMNS} FROM posts WHERE ${where}
-        ORDER BY created_at DESC LIMIT $${limitParam} OFFSET $${offsetParam}`,
+      `SELECT ${COLUMNS} FROM (
+         SELECT ${COLUMNS},
+           ROW_NUMBER() OVER (PARTITION BY COALESCE(topic_id, id) ORDER BY created_at) AS wave
+         FROM posts
+         WHERE ${where}
+       ) ranked
+       ORDER BY wave, topic_id DESC, created_at DESC LIMIT $${limitParam} OFFSET $${offsetParam}`,
       [...params, filter.limit, filter.offset],
     ),
     sql.unsafe<[{ n: number }]>(`SELECT COUNT(*)::int AS n FROM posts WHERE ${where}`, params),
