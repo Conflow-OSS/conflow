@@ -1,0 +1,11 @@
+{
+  "name": "@content-engine/web-bff",
+  "private": true,
+  "type": "module",
+  "description": "Docker runtime manifest for the built BFF only — express/http-proxy-middleware/dotenv are the only packages dist-server/index.js actually imports. Everything else in packages/web's real package.json exists to feed the Vite build and ends up bundled into dist/, never needed as node_modules at runtime. Kept in sync by hand with those three versions.",
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^5.2.1",
+    "http-proxy-middleware": "^3.0.3"
+  }
+}

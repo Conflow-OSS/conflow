@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/dist-server
+**/coverage
+.git
+.playwright-mcp
+*.log
+data/
+packages/server/data/
