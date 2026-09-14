@@ -90,7 +90,7 @@ runsRouter.get("/runs/:id", async (req, res) => {
   const [counts, topics, posts] = await Promise.all([
     runCounts(run.id),
     listTopicsByRun(run.id),
-    listByRun(run.id),
+    listByRun(run.id, { includeSuperseded: true }),
   ]);
   res.json({ run: withParsedConfig(run), counts, topics: topics.length, posts: posts.length });
 });
@@ -99,10 +99,7 @@ runsRouter.get("/runs/:id/posts", async (req, res) => {
   const run = await requireRun(req.params.id);
   const { status, approval, includeSuperseded, includeRejected } = parseOrThrow(postFilterQuery, req.query);
 
-  let posts = await listByRun(run.id);
-  if (!includeSuperseded) {
-    posts = posts.filter((post) => post.status !== "regenerated");
-  }
+  let posts = await listByRun(run.id, { includeSuperseded });
   if (!includeRejected && approval !== "rejected") {
     posts = posts.filter((post) => post.approval !== "rejected");
   }

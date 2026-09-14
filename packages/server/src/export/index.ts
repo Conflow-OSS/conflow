@@ -24,7 +24,7 @@ export async function exportRun(runId: string, format: ExportFormat): Promise<Ex
     throw new Error(`no run with id ${runId}`);
   }
 
-  const posts = await listByRun(runId);
+  const posts = await listByRun(runId, { includeSuperseded: true });
   const topicById = new Map((await listTopicsByRun(runId)).map((topic) => [topic.id, topic]));
   const outDir = join(loadEnv().EXPORT_DIR, runId);
 
@@ -51,7 +51,7 @@ export async function buildRunExport(runId: string, format: ExportFormat): Promi
     throw new NotFoundError(`no run with id ${runId}`);
   }
 
-  const posts = await listByRun(runId);
+  const posts = await listByRun(runId, { includeSuperseded: true });
 
   if (format === "json") {
     const topicById = new Map((await listTopicsByRun(runId)).map((topic) => [topic.id, topic]));

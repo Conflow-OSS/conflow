@@ -67,6 +67,10 @@ const COLUMN_NAMES = [
 // would leak into every API response that just does res.json({ post }).
 // store/vec.ts is the only place that ever selects it.
 const COLUMNS = COLUMN_NAMES.join(", ");
+// `posts.`-qualified variant for queries that join to `topics` — both tables
+// have their own `id`/`run_id` columns, so the bare COLUMNS list above would
+// be ambiguous the moment a join is in scope.
+const QUALIFIED_COLUMNS = COLUMN_NAMES.map((c) => `posts.${c}`).join(", ");
 
 /** Character count by code point — closer to how a person (and LinkedIn) counts. */
 export function charCount(text: string): number {
@@ -122,26 +126,56 @@ export async function getPost(id: string): Promise<PostRow | undefined> {
 }
 
 /**
- * A run's posts, interleaved across topics rather than grouped by topic —
- * variants of the same topic/angle are the ones most likely to read as
- * near-duplicates, so listing them consecutively makes a review pass harder
- * than it needs to be. `wave` is "the Nth post created for this topic";
- * ordering by wave first visits topic A's 1st post, topic B's 1st, topic
- * C's 1st, ... before circling back to anyone's 2nd. Newest topic wins
- * ties within a wave (topic_id is a ULID, so DESC ~= newest-created-first).
+ * A run's posts, interleaved across *base* topics — not across `topic_id`,
+ * which is really a (base topic, angle) pair here (one `topics` row per
+ * angle). Partitioning by topic_id alone only spread angles of the same
+ * base topic apart from each other's own variants; two different angles of
+ * the *same* base topic still landed side by side, which still reads as
+ * "the same topic twice" to a reviewer. Partitioning by the base topic
+ * itself (topics.base_index, scoped per run) fixes that: every base topic's
+ * turn comes up before any base topic gets a second turn.
+ *
+ * `wave` is "the Nth post for this base topic", ordered variant-then-angle
+ * (variant_index outer, angle_index inner) — so a 3-topic x 2-angle x
+ * 2-variant run visits every topic's (angle 1, variant 1) post, then every
+ * topic's (angle 2, variant 1), then every topic's (angle 1, variant 2),
+ * etc., rather than exhausting one topic's angles before moving on.
  * Deterministic — no randomness — so the order is stable across repeat
- * visits and safe to paginate.
+ * visits and safe to paginate. A post with no topic (shouldn't happen for
+ * `kind = 'generated'`, but defensively) gets its own one-post partition
+ * via COALESCE, rather than being silently dropped by the join.
+ *
+ * Superseded (`status = 'regenerated'`) posts are excluded from the wave
+ * computation itself by default, not just from the final output — a
+ * regenerated post and its replacement share the same topic_id and
+ * variant_index, so both compete for the same wave slot. Filtering them out
+ * *after* ranking (which the API route used to do) leaves a gap in that
+ * topic's sequence, which shifts every later wave and corrupts the
+ * interleave for the whole run. Pass `includeSuperseded: true` to see them
+ * anyway; their exact position in that case can be off by one wave since
+ * they're back to competing for slots — acceptable for an audit view, not
+ * for the default one.
  */
-export async function listByRun(runId: string): Promise<PostRow[]> {
+export async function listByRun(
+  runId: string,
+  opts: { includeSuperseded?: boolean } = {},
+): Promise<PostRow[]> {
   const sql = getDb();
+  const supersededClause = opts.includeSuperseded ? "" : "AND posts.status != 'regenerated'";
   return sql.unsafe<PostRow[]>(
     `SELECT ${COLUMNS} FROM (
-       SELECT ${COLUMNS},
-         ROW_NUMBER() OVER (PARTITION BY COALESCE(topic_id, id) ORDER BY created_at) AS wave
+       SELECT ${QUALIFIED_COLUMNS},
+         topics.base_index AS __base_index,
+         topics.angle_index AS __angle_index,
+         ROW_NUMBER() OVER (
+           PARTITION BY COALESCE(topics.base_index::text, posts.id)
+           ORDER BY posts.variant_index, topics.angle_index
+         ) AS wave
        FROM posts
-       WHERE run_id = $1
+       LEFT JOIN topics ON topics.id = posts.topic_id
+       WHERE posts.run_id = $1 ${supersededClause}
      ) ranked
-     ORDER BY wave, topic_id DESC, created_at DESC`,
+     ORDER BY wave, __base_index DESC, __angle_index DESC, variant_index DESC`,
     [runId],
   );
 }
@@ -380,11 +414,11 @@ export interface PostListFilter {
  * `limit`/`offset` (a page could come back short, or double-count across
  * pages) once more than one page of results exists.
  *
- * Ordering interleaves across topics the same way `listByRun` does — see
- * that function's comment. `topic_id` is a ULID (scoped uniquely per topic
- * row regardless of which run it belongs to), so it's a safe cross-run
- * partition/tiebreak key here too, and stays deterministic under
- * limit/offset the way ORDER BY created_at DESC was before.
+ * Ordering interleaves across base topics the same way `listByRun` does —
+ * see that function's comment for why topic_id alone wasn't specific enough
+ * (it's really a (base topic, angle) pair here). (run_id, base_index)
+ * together are a safe cross-run partition key, since base_index is only
+ * scoped within one run.
  */
 export async function listPosts(filter: PostListFilter): Promise<{ posts: PostRow[]; total: number }> {
   const sql = getDb();
@@ -399,7 +433,10 @@ export async function listPosts(filter: PostListFilter): Promise<{ posts: PostRo
   }
   if (filter.runId) {
     params.push(filter.runId);
-    conditions.push(`run_id = $${params.length}`);
+    // Qualified even though there's no join in scope for the count query
+    // below — posts.run_id is unambiguous either way, and this same
+    // `conditions` array feeds both the joined and the unjoined query.
+    conditions.push(`posts.run_id = $${params.length}`);
   }
   if (filter.status === "ok") {
     conditions.push(`status = 'ok'`);
@@ -418,12 +455,20 @@ export async function listPosts(filter: PostListFilter): Promise<{ posts: PostRo
   const [posts, [{ n }]] = await Promise.all([
     sql.unsafe<PostRow[]>(
       `SELECT ${COLUMNS} FROM (
-         SELECT ${COLUMNS},
-           ROW_NUMBER() OVER (PARTITION BY COALESCE(topic_id, id) ORDER BY created_at) AS wave
+         SELECT ${QUALIFIED_COLUMNS},
+           posts.run_id AS __run_id,
+           topics.base_index AS __base_index,
+           topics.angle_index AS __angle_index,
+           ROW_NUMBER() OVER (
+             PARTITION BY COALESCE(posts.run_id || ':' || topics.base_index::text, posts.id)
+             ORDER BY posts.variant_index, topics.angle_index
+           ) AS wave
          FROM posts
+         LEFT JOIN topics ON topics.id = posts.topic_id
          WHERE ${where}
        ) ranked
-       ORDER BY wave, topic_id DESC, created_at DESC LIMIT $${limitParam} OFFSET $${offsetParam}`,
+       ORDER BY wave, __run_id DESC, __base_index DESC, __angle_index DESC, variant_index DESC
+       LIMIT $${limitParam} OFFSET $${offsetParam}`,
       [...params, filter.limit, filter.offset],
     ),
     sql.unsafe<[{ n: number }]>(`SELECT COUNT(*)::int AS n FROM posts WHERE ${where}`, params),
