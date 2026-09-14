@@ -80,6 +80,16 @@ services:
       # Browser-facing card image URLs — minio's published host port, not
       # the container-network name (the user's browser can't resolve "minio").
       S3_PUBLIC_URL_BASE: http://localhost:9000
+      # google-auth-library's ADC lookup checks this env var before falling
+      # back to the well-known ~/.config/gcloud path — and the container's
+      # $HOME won't match the host's anyway. Mounted read-only below.
+      GOOGLE_APPLICATION_CREDENTIALS: /gcp/adc.json
+    volumes:
+      # The host's own ADC file (from `gcloud auth application-default
+      # login`, run on the host — this can't be done inside the container:
+      # no gcloud CLI in the image, and credentials written inside a
+      # container vanish the moment it's recreated).
+      - ${HOME}/.config/gcloud/application_default_credentials.json:/gcp/adc.json:ro
     ports:
       # Bound to loopback only — macOS's AirPlay Receiver squats the
       # wildcard address on 5000, and Docker's default publish binds
@@ -111,6 +121,9 @@ services:
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000
       S3_PUBLIC_URL_BASE: http://localhost:9000
+      GOOGLE_APPLICATION_CREDENTIALS: /gcp/adc.json
+    volumes:
+      - ${HOME}/.config/gcloud/application_default_credentials.json:/gcp/adc.json:ro
     depends_on:
       postgres:
         condition: service_healthy
