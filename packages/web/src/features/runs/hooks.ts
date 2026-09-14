@@ -20,6 +20,7 @@ export function useRunTopics(runId: string) {
   return useQuery({
     queryKey: ["run", runId, "topics"],
     queryFn: () => getRunTopics(runId),
+    enabled: !!runId,
   });
 }
 

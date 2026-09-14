@@ -9,6 +9,7 @@ import { PostBadges } from "@/features/posts/PostBadges";
 import { RegenerateAction } from "@/features/posts/RegenerateAction";
 import { RelatedPostPanel } from "@/features/posts/RelatedPostPanel";
 import { usePost, usePublishPost, useRenderCard, useSetApproval } from "@/features/posts/hooks";
+import { useRunTopics } from "@/features/runs/hooks";
 import { cn } from "@/lib/utils";
 
 export function PostDetailPage() {
@@ -26,6 +27,9 @@ export function PostDetailPage() {
   const setApproval = useSetApproval(postId);
   const publish = usePublishPost(postId);
   const renderCard = useRenderCard(postId);
+  // The base topic text isn't denormalized onto PostRow (unlike angle/lesson
+  // below), so it has to be looked up from the run's own topics list.
+  const topicsQuery = useRunTopics(postQuery.data?.post.run_id ?? "");
 
   if (postQuery.isLoading) {
     return (
@@ -95,7 +99,11 @@ export function PostDetailPage() {
           </div>
           <span className="text-xs text-muted-foreground">{post.char_count} chars</span>
         </div>
-        {post.topic_angle && <p className="mt-1 text-sm text-muted-foreground">{post.topic_angle}</p>}
+        <PostContext
+          topic={topicsQuery.data?.topics.find((t) => t.id === post.topic_id)?.base_text}
+          angle={post.topic_angle}
+          lesson={post.lesson_text}
+        />
       </div>
 
       {relatedId ? (
@@ -160,6 +168,37 @@ export function PostDetailPage() {
       )}
       {!canPublish && !post.published_at && (
         <p className="text-xs text-muted-foreground">Approve the post before publishing.</p>
+      )}
+    </div>
+  );
+}
+
+function PostContext({
+  topic,
+  angle,
+  lesson,
+}: {
+  topic?: string | null;
+  angle?: string | null;
+  lesson?: string | null;
+}) {
+  if (!topic && !angle && !lesson) return null;
+  return (
+    <div className="mt-2 space-y-0.5 text-sm text-muted-foreground">
+      {topic && (
+        <p>
+          <span className="text-foreground">Topic:</span> {topic}
+        </p>
+      )}
+      {angle && (
+        <p>
+          <span className="text-foreground">Angle:</span> {angle}
+        </p>
+      )}
+      {lesson && (
+        <p>
+          <span className="text-foreground">Lesson:</span> {lesson}
+        </p>
       )}
     </div>
   );
