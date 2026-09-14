@@ -85,7 +85,7 @@ export function TopicsPage() {
                 {topic.angles.length > 0 && (
                   <p className="text-sm text-muted-foreground">{topic.angles.join(" · ")}</p>
                 )}
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Icon icon="feather:clock" className="h-3.5 w-3.5" />
                     Last used {new Date(topic.last_used_at).toLocaleDateString()}
