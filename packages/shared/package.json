@@ -1,0 +1,14 @@
+{
+  "name": "@content-engine/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Types shared between packages/server and packages/web — no runtime code, no build step needed",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "types": "./src/index.ts"
+}
