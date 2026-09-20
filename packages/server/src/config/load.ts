@@ -1,5 +1,15 @@
-import "dotenv/config";
+import { config as loadDotenv } from "dotenv";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { EnvSchema, type Env } from "./schema.js";
+
+// Plain `dotenv/config` reads .env relative to process.cwd() — fine when the
+// CLI is run from packages/server, wrong (silently no-ops) when it's run
+// from anywhere else, e.g. `npx content ...` from the repo root. Resolve
+// .env relative to this file's own location instead: two levels up from
+// config/load.ts (dev, via tsx) or dist/config/load.js (built) both land on
+// packages/server/.env.
+loadDotenv({ path: join(dirname(fileURLToPath(import.meta.url)), "..", "..", ".env") });
 
 let cached: Env | null = null;
 

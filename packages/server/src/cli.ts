@@ -115,7 +115,7 @@ program
       return;
     }
 
-    const posts = await listByRun(run.id);
+    const posts = await listByRun(run.id, { includeSuperseded: true });
     const topicById = new Map((await listTopicsByRun(run.id)).map((topic) => [topic.id, topic]));
 
     process.stdout.write(

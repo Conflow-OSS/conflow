@@ -1,9 +1,18 @@
-# Local infrastructure for the API + worker.
+# Everything the app needs, in one compose file.
 #   postgres — the database (pgvector image: Postgres + the vector extension)
 #   redis    — the BullMQ job queue
 #   minio    — S3-compatible object storage for the rendered image cards
+#   api      — the HTTP API (@content-engine/server, packages/server/Dockerfile)
+#   worker   — the BullMQ job processor (same image as api, different CMD)
+#   web      — the React SPA + its BFF (@content-engine/web, packages/web/Dockerfile)
 #
-#   docker compose up -d
+#   docker compose up -d --build
+#
+# api/worker read secrets (API keys, model config) from packages/server/.env;
+# web reads packages/web/.env — both files are gitignored and must already
+# exist locally (see each package's .env.example). The `environment:` blocks
+# below override just the handful of values that differ inside the compose
+# network (service names instead of localhost, 0.0.0.0 instead of 127.0.0.1).
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -22,6 +31,11 @@ services:
       # hand: docker compose exec postgres createdb -U postgres content_engine_test
       - ./packages/server/scripts/postgres-init:/docker-entrypoint-initdb.d:ro
     command: ["postgres"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
   redis:
     image: redis:7-alpine
@@ -30,6 +44,11 @@ services:
     volumes:
       - redis-data:/data
     command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
   minio:
     image: minio/minio
@@ -44,6 +63,90 @@ services:
     volumes:
       - minio-data:/data
     command: ["server", "/data", "--console-address", ":9001"]
+
+  api:
+    build:
+      context: .
+      dockerfile: packages/server/Dockerfile
+    image: content-engine-server
+    command: ["node", "dist/api/server.js"]
+    env_file: ./packages/server/.env
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: 5000
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/content_engine
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      # Browser-facing card image URLs — minio's published host port, not
+      # the container-network name (the user's browser can't resolve "minio").
+      S3_PUBLIC_URL_BASE: http://localhost:9000
+      # google-auth-library's ADC lookup checks this env var before falling
+      # back to the well-known ~/.config/gcloud path — and the container's
+      # $HOME won't match the host's anyway. Mounted read-only below.
+      GOOGLE_APPLICATION_CREDENTIALS: /gcp/adc.json
+    volumes:
+      # The host's own ADC file (from `gcloud auth application-default
+      # login`, run on the host — this can't be done inside the container:
+      # no gcloud CLI in the image, and credentials written inside a
+      # container vanish the moment it's recreated).
+      - ${HOME}/.config/gcloud/application_default_credentials.json:/gcp/adc.json:ro
+    ports:
+      # Bound to loopback only — macOS's AirPlay Receiver squats the
+      # wildcard address on 5000, and Docker's default publish binds
+      # 0.0.0.0, which collides with it.
+      - "127.0.0.1:5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5000/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  worker:
+    image: content-engine-server
+    build:
+      context: .
+      dockerfile: packages/server/Dockerfile
+    command: ["node", "dist/worker/index.js"]
+    env_file: ./packages/server/.env
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/content_engine
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_URL_BASE: http://localhost:9000
+      GOOGLE_APPLICATION_CREDENTIALS: /gcp/adc.json
+    volumes:
+      - ${HOME}/.config/gcloud/application_default_credentials.json:/gcp/adc.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+    env_file: ./packages/web/.env
+    environment:
+      BACKEND_URL: http://api:5000
+      PORT: 4000
+    ports:
+      - "4000:4000"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   postgres-data:

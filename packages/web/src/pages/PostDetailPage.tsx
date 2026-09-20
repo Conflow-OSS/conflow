@@ -2,14 +2,17 @@ import { Icon } from "@iconify/react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import { LoadingIcon } from "@/components/ui/loading-icon";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DownloadImageButton } from "@/features/posts/DownloadImageButton";
 import { EditPostDialog } from "@/features/posts/EditPostDialog";
 import { PostBadges } from "@/features/posts/PostBadges";
 import { RegenerateAction } from "@/features/posts/RegenerateAction";
 import { RelatedPostPanel } from "@/features/posts/RelatedPostPanel";
 import { usePost, usePublishPost, useRenderCard, useSetApproval } from "@/features/posts/hooks";
 import { useRunTopics } from "@/features/runs/hooks";
+import { toClipboardSafeText } from "@/lib/text";
 import { cn } from "@/lib/utils";
 
 export function PostDetailPage() {
@@ -118,13 +121,19 @@ export function PostDetailPage() {
       {post.image_url && (
         <div>
           <p className="mb-2 text-sm font-medium text-muted-foreground">Card image</p>
-          <img src={post.image_url} alt="" className="w-full max-w-sm rounded-md border border-border" />
+          <div className="relative w-full max-w-sm">
+            <img src={post.image_url} alt="" className="w-full rounded-md border border-border" />
+            <DownloadImageButton imageUrl={post.image_url} filename={`post-${post.id}.png`} />
+          </div>
         </div>
       )}
 
       {post.summary && (
         <div>
-          <p className="mb-1 text-sm font-medium text-muted-foreground">Summary</p>
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <p className="text-sm font-medium text-muted-foreground">Summary</p>
+            <CopyButton variant="ghost" className="h-7 w-7" value={toClipboardSafeText(post.summary)} label="Copy summary" />
+          </div>
           <p className="text-sm">{post.summary}</p>
         </div>
       )}
@@ -207,7 +216,10 @@ function PostContext({
 function PostBodyPanel({ label, body }: { label?: string; body: string }) {
   return (
     <div className="space-y-2">
-      {label && <p className="text-xs font-medium text-muted-foreground">{label}</p>}
+      <div className="flex items-center justify-between gap-2">
+        {label ? <p className="text-xs font-medium text-muted-foreground">{label}</p> : <span />}
+        <CopyButton variant="ghost" className="h-7 w-7" value={toClipboardSafeText(body)} label="Copy post body" />
+      </div>
       <div className="rounded-lg border border-border bg-card p-4 [box-shadow:var(--shadow-s)]">
         <p className="whitespace-pre-line text-sm leading-relaxed">{body}</p>
       </div>
