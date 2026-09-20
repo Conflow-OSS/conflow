@@ -1,6 +1,6 @@
 import type { DesignTemplateRow } from "@content-engine/shared";
 import { Icon } from "@iconify/react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -142,6 +142,19 @@ function DesignTemplateDialog({ template, trigger }: { template?: DesignTemplate
   const updateTemplate = useUpdateDesignTemplate(template?.id ?? "");
   const mutation = template ? updateTemplate : createTemplate;
 
+  // Object URLs are per-file and must be revoked once nothing points at them
+  // anymore, or the browser keeps that blob alive for the tab's whole life.
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!image) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(image);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [image]);
+
   function handleOpenChange(next: boolean) {
     setOpen(next);
     if (next) {
@@ -208,6 +221,13 @@ function DesignTemplateDialog({ template, trigger }: { template?: DesignTemplate
 
         <Field>
           <FieldLabel required={!template}>Preview image</FieldLabel>
+          {(previewUrl ?? template?.preview_image_url) && (
+            <img
+              src={previewUrl ?? template!.preview_image_url}
+              alt=""
+              className="h-32 w-32 rounded-lg border border-border object-cover"
+            />
+          )}
           <FileInput accept="image/png,image/jpeg,image/webp" onChange={(e) => setImage(e.target.files?.[0] ?? null)} />
           {template && <FieldDescription>Leave empty to keep the current image.</FieldDescription>}
         </Field>

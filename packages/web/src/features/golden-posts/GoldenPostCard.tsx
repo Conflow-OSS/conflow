@@ -16,11 +16,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LoadingIcon } from "@/components/ui/loading-icon";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { CARD_PREVIEW_CHARS, truncate } from "@/lib/text";
-import { useDeleteGoldenPost, useUpdateGoldenPost } from "./hooks";
 import type { UpdateGoldenPostInput } from "./api";
 import { GoldenPostFormFields, goldenPostToForm, isGoldenPostFormValid, type GoldenPostFormValues } from "./GoldenPostForm";
+import { useDeleteGoldenPost, useUpdateGoldenPost } from "./hooks";
 
 export function GoldenPostCard({
   goldenPost,
@@ -31,6 +33,7 @@ export function GoldenPostCard({
   template?: DesignTemplateRow;
   templates: DesignTemplateRow[];
 }) {
+  const isMobile = useIsMobile();
   const [isEditing, setIsEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [values, setValues] = useState<GoldenPostFormValues>(() => goldenPostToForm(goldenPost));
@@ -74,9 +77,55 @@ export function GoldenPostCard({
     });
   }
 
+  const deleteConfirm = (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button variant="ghost" size="icon" aria-label="Delete golden post">
+          <Icon icon="feather:trash-2" className="h-4 w-4 text-destructive" />
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete this golden post?</AlertDialogTitle>
+          <AlertDialogDescription>
+            It stops being used as a voice example, and its share of the generation mix goes to the remaining
+            golden posts.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+
+  const editForm = (
+    <div className="space-y-4">
+      <GoldenPostFormFields values={values} onChange={setValues} templates={templates} />
+      {updateGoldenPost.isError && (
+        <p className="text-sm text-destructive">
+          {updateGoldenPost.error instanceof Error ? updateGoldenPost.error.message : "Failed to save."}
+        </p>
+      )}
+      <div className="flex items-center justify-between gap-2">
+        {deleteConfirm}
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setIsEditing(false)}>
+            Cancel
+          </Button>
+          <Button variant="primary" disabled={!isGoldenPostFormValid(values) || updateGoldenPost.isPending} onClick={handleSave}>
+            {updateGoldenPost.isPending && <LoadingIcon pending icon="feather:save" />}
+            {updateGoldenPost.isPending ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <Card className="relative overflow-hidden" beam={false}>
-      {!isEditing && (
+      {!(isEditing && isMobile) && (
         <Button
           variant="secondary"
           size="icon"
@@ -88,49 +137,17 @@ export function GoldenPostCard({
         </Button>
       )}
 
-      {isEditing ? (
-        <CardContent className="space-y-4 pt-5">
-          <GoldenPostFormFields values={values} onChange={setValues} templates={templates} />
-          {updateGoldenPost.isError && (
-            <p className="text-sm text-destructive">
-              {updateGoldenPost.error instanceof Error ? updateGoldenPost.error.message : "Failed to save."}
-            </p>
-          )}
-          <div className="flex items-center justify-between gap-2">
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label="Delete golden post">
-                  <Icon icon="feather:trash-2" className="h-4 w-4 text-destructive" />
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete this golden post?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    It stops being used as a voice example, and its share of the generation mix goes to the
-                    remaining golden posts.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={() => setIsEditing(false)}>
-                Cancel
-              </Button>
-              <Button variant="primary" disabled={!isGoldenPostFormValid(values) || updateGoldenPost.isPending} onClick={handleSave}>
-                {updateGoldenPost.isPending && <LoadingIcon pending icon="feather:save" />}
-                {updateGoldenPost.isPending ? "Saving…" : "Save"}
-              </Button>
-            </div>
-          </div>
-        </CardContent>
+      {isEditing && isMobile ? (
+        <CardContent className="pt-5">{editForm}</CardContent>
       ) : (
         <>
-          {template && <img src={template.preview_image_url} alt="" className="aspect-square w-full object-cover" />}
+          {template ? (
+            <img src={template.preview_image_url} alt="" className="aspect-square w-full object-cover" />
+          ) : (
+            <div className="flex aspect-square w-full items-center justify-center bg-muted">
+              <Icon icon="tabler:photo" className="h-10 w-10 text-muted-foreground" />
+            </div>
+          )}
           <CardHeader className="gap-1.5 space-y-0">
             <p className="pr-8 text-sm font-semibold">{goldenPost.title ?? "Untitled"}</p>
             <div className="flex flex-wrap items-center gap-1.5">
@@ -167,6 +184,18 @@ export function GoldenPostCard({
             <p className="text-xs text-muted-foreground">Updated {new Date(goldenPost.updated_at).toLocaleDateString()}</p>
           </CardFooter>
         </>
+      )}
+
+      {!isMobile && (
+        <Dialog open={isEditing} onOpenChange={setIsEditing}>
+          <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit golden post</DialogTitle>
+              <DialogDescription>Changes apply immediately to future generation runs.</DialogDescription>
+            </DialogHeader>
+            {editForm}
+          </DialogContent>
+        </Dialog>
       )}
     </Card>
   );
