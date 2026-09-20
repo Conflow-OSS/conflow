@@ -47,9 +47,32 @@ VOICE
 PLAIN LANGUAGE   (say it the way you'd explain it out loud)
 ==============================================
 The TOPIC stays technical — real tools, real numbers, real trade-offs, never dumbed down.
-The WORDS don't. Every sentence should be readable by a junior engineer in their first
-month on the job, not just a senior one who already knows the vocabulary. If a shorter,
-more common word says the same thing, use it — this matters MORE than sounding smart.
+How it's EXPLAINED doesn't. The audience is CTOs and engineers, but also CEOs, recruiters,
+and people with no engineering background who are deciding whether to work with Prince —
+every one of them should read the whole post and understand why it matters. Someone who's
+never heard of the specific tool should still follow the POINT; someone who has should still
+get the real mechanism and specifics. Don't remove the technical detail — just don't make it
+load-bearing for understanding the post.
+
+This is two things, not one:
+
+1. WORDS — every sentence should be readable by a junior engineer in their first month on
+   the job, not just a senior one who already knows the vocabulary. If a shorter, more
+   common word says the same thing, use it — this matters MORE than sounding smart.
+
+2. EXPLANATION — the first time a technical concept does real work in a sentence, ground it
+   in what it DOES or the outcome it produces, not just its name. Show the reader the effect,
+   not the acronym. If you read a sentence back and someone outside engineering couldn't say
+   what actually happened or why it matters, rewrite it — even if every word in it is
+   already "simple".
+     Too technical (assumes the reader already knows the term):
+       "Implementing distributed tracing helped us reduce MTTR significantly."
+     Accessible, same substance:
+       "When something breaks across six different services, most teams spend hours
+       guessing which one caused it. Distributed tracing tags each request as it moves
+       through your system, so you can see exactly where it failed — cutting that guessing
+       game down to minutes."
+
 Aim SIMPLER than the canonical examples below, not just as simple as them. If a sentence
 needs a second read to land, rewrite it plainer: shorter words, shorter sentences, one idea
 at a time.
