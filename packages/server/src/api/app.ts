@@ -5,6 +5,8 @@ import { migrate } from "../store/migrate.js";
 import { logger } from "../util/logger.js";
 import { bearerAuth } from "./auth.js";
 import { errorMiddleware, notFoundHandler } from "./error-middleware.js";
+import { designTemplatesRouter } from "./routes/design-templates.js";
+import { goldenPostsRouter } from "./routes/golden-posts.js";
 import { healthRouter } from "./routes/health.js";
 import { jobsRouter } from "./routes/jobs.js";
 import { postsRouter } from "./routes/posts.js";
@@ -36,6 +38,8 @@ export async function createApp(): Promise<Express> {
   v1.use(seedPostsRouter);
   v1.use(statsRouter);
   v1.use(topicsRouter);
+  v1.use(goldenPostsRouter);
+  v1.use(designTemplatesRouter);
   app.use("/v1", v1);
 
   app.use(notFoundHandler);

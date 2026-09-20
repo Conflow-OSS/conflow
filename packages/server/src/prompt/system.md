@@ -253,15 +253,7 @@ HASHTAG POOL
 ==============================================
 CANONICAL VOICE EXAMPLES   (study the tone; never reuse their wording or topics)
 ==============================================
-<example format="long" hook="questions">
-{{GOLDEN_LONG_QUESTIONS}}
-</example>
-<example format="long" hook="callout">
-{{GOLDEN_LONG_CALLOUT}}
-</example>
-<example format="short">
-{{GOLDEN_SHORT}}
-</example>
+{{GOLDEN_EXAMPLES}}
 
 ==============================================
 OUTPUT   (return ONLY this XML, nothing else)

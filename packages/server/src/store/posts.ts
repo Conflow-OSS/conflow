@@ -27,6 +27,7 @@ export interface NewPost {
   dup_score?: number | null;
   model_channel?: string | null;
   model_id?: string | null;
+  golden_post_id?: string | null;
 }
 
 const COLUMN_NAMES = [
@@ -58,6 +59,7 @@ const COLUMN_NAMES = [
   "model_channel",
   "model_id",
   "created_at",
+  "golden_post_id",
 ] as const;
 
 // The embedding lives on this same table (a real pgvector column, not a
@@ -113,6 +115,7 @@ export async function insertPost(p: NewPost, db: Queryable = getDb()): Promise<P
     model_channel: p.model_channel ?? null,
     model_id: p.model_id ?? null,
     created_at: new Date().toISOString(),
+    golden_post_id: p.golden_post_id ?? null,
   };
 
   await db`INSERT INTO posts ${db(row, ...COLUMN_NAMES)}`;

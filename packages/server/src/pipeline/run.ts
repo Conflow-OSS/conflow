@@ -2,11 +2,12 @@ import { readFileSync } from "node:fs";
 import { loadEnv } from "../config/load.js";
 import { embedDocuments } from "../embeddings/voyage.js";
 import type { ContentModel } from "../models/types.js";
+import { listGoldenPosts } from "../store/golden-posts.js";
 import { migrate } from "../store/migrate.js";
 import { insertPost } from "../store/posts.js";
 import { insertRun, setRunProgress, setRunStatus } from "../store/runs.js";
 import { insertTopic } from "../store/topics.js";
-import type { RunRow } from "../store/types.js";
+import type { GoldenPostRow, RunRow } from "../store/types.js";
 import { nearestLedgerMatch, upsertEmbedding } from "../store/vec.js";
 import { logger } from "../util/logger.js";
 import { type EmbeddedPost, findDuplicate } from "./dedup.js";
@@ -195,7 +196,6 @@ async function runMatrixLoop(input: {
   anglesPerTopic: number;
   postsPerAngle: number;
 }): Promise<MatrixRunResult> {
-  const env = loadEnv();
   const { run, baseTopics, model, sourceFacts, report, anglesPerTopic, postsPerAngle } = input;
 
   const postsExpected = baseTopics.length * anglesPerTopic * postsPerAngle;
@@ -208,7 +208,10 @@ async function runMatrixLoop(input: {
     postsExpected,
   });
 
-  const postSlots = planPostSlots(postsExpected, env.SHORT_FORM_RATIO, env.HOOK_SPLIT);
+  // Fetched once, up front — fails fast (before any topic-expansion LLM
+  // calls) if there's nothing to plan the format/hook/voice mix from.
+  const goldenPosts = await listGoldenPosts();
+  const postSlots = planPostSlots(postsExpected, goldenPosts);
   let nextSlotIndex = 0;
 
   const totals = { postsCreated: 0, flaggedForLength: 0, flaggedAsDuplicate: 0 };
@@ -249,6 +252,7 @@ async function runMatrixLoop(input: {
         slots: slotsForThisAngle,
         sourceFacts,
         model,
+        goldenPosts,
       });
 
       totals.postsCreated += angleTotals.created;
@@ -276,6 +280,7 @@ async function generateAndPersistLessons(input: {
   slots: PostSlot[];
   sourceFacts?: string;
   model: ContentModel;
+  goldenPosts: GoldenPostRow[];
 }): Promise<{ created: number; flaggedForLength: number; flaggedAsDuplicate: number }> {
   const env = loadEnv();
 
@@ -301,6 +306,7 @@ async function generateAndPersistLessons(input: {
         sourceFacts: input.sourceFacts,
       },
       input.model,
+      input.goldenPosts,
     );
     generatedVariants.push({ variant, slot, lesson });
   }
@@ -347,6 +353,7 @@ async function generateAndPersistLessons(input: {
       variant_index: variantIndex,
       format: slot.format,
       hook_style: slot.hookStyle,
+      golden_post_id: slot.goldenPostId,
       topic_angle: variant.parsed.topicAngle,
       lesson_text: lesson,
       body: variant.parsed.body,

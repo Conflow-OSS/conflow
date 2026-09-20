@@ -2,6 +2,19 @@ import { describe, expect, it } from "vitest";
 import type { ContentModel } from "../src/models/types.js";
 import type { PostRequest } from "../src/prompt/assemble.js";
 import { generatePost } from "../src/pipeline/generate.js";
+import type { GoldenPostRow } from "../src/store/types.js";
+
+const FIXTURE_GOLDENS: GoldenPostRow[] = [
+  {
+    id: "g1",
+    body: "a reference post",
+    format: "long",
+    hook_style: "questions",
+    design_template_id: null,
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+  },
+];
 
 process.env.LENGTH_TOLERANCE = "0.15";
 process.env.SUMMARY_MAX_CHARS = "180";
@@ -45,6 +58,7 @@ describe("generatePost", () => {
     const result = await generatePost(
       generateRequest(),
       modelReturning(post(IN_BAND_LONG_BODY, "Scale on queue depth, not CPU.")),
+      FIXTURE_GOLDENS,
     );
     expect(result.status).toBe("ok");
     expect(result.flagReason).toBeNull();
@@ -52,7 +66,7 @@ describe("generatePost", () => {
   });
 
   it("flags a post that is far too short for its format", async () => {
-    const result = await generatePost(generateRequest(), modelReturning(post("way too short")));
+    const result = await generatePost(generateRequest(), modelReturning(post("way too short")), FIXTURE_GOLDENS);
     expect(result.status).toBe("flag_length");
     expect(result.flagReason).toMatch(/body .* below the \d+ minimum/);
   });
@@ -62,6 +76,7 @@ describe("generatePost", () => {
     const result = await generatePost(
       generateRequest(),
       modelReturning(post(IN_BAND_LONG_BODY, longSummary)),
+      FIXTURE_GOLDENS,
     );
     expect(result.status).toBe("flag_length");
     expect(result.flagReason).toMatch(/summary \d+ chars — above the \d+ card limit/);
@@ -81,6 +96,7 @@ describe("generatePost", () => {
     await generatePost(
       { ...generateRequest(), sourceFacts: "I ran the migration with zero downtime using pg_logical." },
       capturingModel,
+      FIXTURE_GOLDENS,
     );
 
     expect(capturedUserPrompt).toContain("you react to backlog, not CPU noise");
@@ -108,6 +124,7 @@ describe("generatePost", () => {
         collidedWith: { body: "the earlier post that this one echoed", similarity: 0.94 },
       },
       capturingModel,
+      FIXTURE_GOLDENS,
     );
 
     expect(capturedTemperature).toBe(0.9);

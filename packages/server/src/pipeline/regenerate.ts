@@ -1,6 +1,7 @@
 import { loadEnv } from "../config/load.js";
 import { embedDocuments } from "../embeddings/voyage.js";
 import type { ContentModel } from "../models/types.js";
+import { listGoldenPosts } from "../store/golden-posts.js";
 import { migrate } from "../store/migrate.js";
 import { getPost, insertPost, setStatus, standingVariantsOfTopic } from "../store/posts.js";
 import { getRun } from "../store/runs.js";
@@ -54,6 +55,7 @@ export async function regeneratePost(
   const otherLessons = siblings
     .map((sibling) => sibling.lesson_text)
     .filter((lessonText): lessonText is string => lessonText !== null);
+  const goldenPosts = await listGoldenPosts();
 
   const variant = await generatePost(
     {
@@ -72,6 +74,7 @@ export async function regeneratePost(
       collidedWith: await loadCollisionPost(oldPost),
     },
     model,
+    goldenPosts,
   );
 
   const [embedding] = await embedDocuments([variant.parsed.body]);
@@ -108,6 +111,7 @@ export async function regeneratePost(
     variant_index: oldPost.variant_index,
     format: oldPost.format,
     hook_style: oldPost.hook_style,
+    golden_post_id: oldPost.golden_post_id,
     topic_angle: variant.parsed.topicAngle,
     lesson_text: lesson,
     body: variant.parsed.body,

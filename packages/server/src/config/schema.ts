@@ -10,8 +10,6 @@ export const EnvSchema = z.object({
   GEN_X: z.coerce.number().int().positive().default(6),
   GEN_Y: z.coerce.number().int().positive().default(4),
   GEN_Z: z.coerce.number().int().positive().default(2),
-  SHORT_FORM_RATIO: z.coerce.number().min(0).max(1).default(0.35),
-  HOOK_SPLIT: z.coerce.number().min(0).max(1).default(0.5),
 
   // model channel
   MODEL_CHANNEL: z.enum(["zai", "vertex"]).default("vertex"),
@@ -53,7 +51,6 @@ export const EnvSchema = z.object({
 
   // image cards
   IMEJIS_API_KEY: z.string().min(1).optional(),
-  IMEJIS_DESIGN_ID: z.string().min(1).default("sbOUjiAfOhsl7UfKBtuqU"),
   CARD_IMAGE_FORMAT: z.enum(["png", "jpeg", "webp"]).default("png"),
   CARD_BATCH_LIMIT: z.coerce.number().int().positive().default(10),
   CARD_RENDER_DELAY_MS: z.coerce.number().int().nonnegative().default(1100),

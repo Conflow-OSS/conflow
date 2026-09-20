@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 process.env.IMEJIS_API_KEY = "test-key";
-process.env.IMEJIS_DESIGN_ID = "designABC";
 process.env.CARD_IMAGE_FORMAT = "png";
 process.env.LLM_MAX_RETRIES = "2";
 process.env.RETRY_BASE_MS = "1";
@@ -30,7 +29,7 @@ describe("renderCard", () => {
   it("posts the summary to the template endpoint with the api-key header", async () => {
     fetchMock.mockResolvedValueOnce(pngResponse());
 
-    const bytes = await renderCard("Require one approved review before any merge.");
+    const bytes = await renderCard("Require one approved review before any merge.", "designABC");
 
     expect(bytes).toBeInstanceOf(Buffer);
     expect(bytes.length).toBe(7);
@@ -48,13 +47,13 @@ describe("renderCard", () => {
       .mockResolvedValueOnce(new Response("upstream", { status: 500 }))
       .mockResolvedValueOnce(pngResponse());
 
-    await expect(renderCard("x")).resolves.toBeInstanceOf(Buffer);
+    await expect(renderCard("x", "designABC")).resolves.toBeInstanceOf(Buffer);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("does not retry a 400", async () => {
     fetchMock.mockResolvedValue(new Response("bad request", { status: 400 }));
-    await expect(renderCard("x")).rejects.toThrow(/HTTP 400/);
+    await expect(renderCard("x", "designABC")).rejects.toThrow(/HTTP 400/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

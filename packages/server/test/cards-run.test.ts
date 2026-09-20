@@ -6,12 +6,13 @@ import { resetTestTables, useTestDatabase } from "./support/test-db.js";
 useTestDatabase();
 process.env.CARD_IMAGE_FORMAT = "png";
 process.env.CARD_RENDER_DELAY_MS = "0";
-process.env.IMEJIS_DESIGN_ID = "designX";
 process.env.LOG_LEVEL = "error";
 
 const { migrate } = await import("../src/store/migrate.js");
 const { insertRun } = await import("../src/store/runs.js");
 const { insertPost, getPost, setApproval, setStatus } = await import("../src/store/posts.js");
+const { insertGoldenPost } = await import("../src/store/golden-posts.js");
+const { insertDesignTemplate } = await import("../src/store/design-templates.js");
 const { generateCardsForRun, generateOneCard } = await import("../src/cards/run.js");
 const { closeDb, getDb } = await import("../src/store/db.js");
 
@@ -57,6 +58,7 @@ class FakeStore implements ImageStore {
 }
 
 let runId: string;
+let goldenPostId: string;
 let store: FakeStore;
 
 async function approvedPost(summary: string | null): Promise<string> {
@@ -67,6 +69,7 @@ async function approvedPost(summary: string | null): Promise<string> {
     body: "a".repeat(1000),
     summary,
     status: "ok",
+    golden_post_id: goldenPostId,
   });
   await setApproval(post.id, "approved");
   return post.id;
@@ -75,6 +78,20 @@ async function approvedPost(summary: string | null): Promise<string> {
 beforeEach(async () => {
   await resetTestTables();
   runId = (await insertRun({ flow: "matrix", config: {}, input_kind: "topic_list" })).id;
+  const designTemplate = await insertDesignTemplate({
+    name: "Default",
+    imejis_design_id: "designX",
+    preview_image_url: "https://cdn.example/preview.png",
+    preview_image_key: "design-templates/preview.png",
+  });
+  goldenPostId = (
+    await insertGoldenPost({
+      body: "a golden post",
+      format: "long",
+      hook_style: "questions",
+      design_template_id: designTemplate.id,
+    })
+  ).id;
   store = new FakeStore();
   vi.clearAllMocks();
 });

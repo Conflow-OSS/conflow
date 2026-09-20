@@ -107,3 +107,27 @@ export const seedPostListQuery = z.object({
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
+
+export const createGoldenPostBody = z.object({
+  body: z.string().min(1),
+  format: z.enum(["short", "long"]),
+  hookStyle: z.enum(["questions", "callout"]).optional(),
+  designTemplateId: z.string().min(1).optional(),
+});
+
+export const updateGoldenPostBody = z.object({
+  body: z.string().min(1).optional(),
+  format: z.enum(["short", "long"]).optional(),
+  hookStyle: z.enum(["questions", "callout"]).nullable().optional(),
+  designTemplateId: z.string().min(1).nullable().optional(),
+});
+
+export const createDesignTemplateBody = z.object({
+  name: z.string().min(1).max(60),
+  imejisDesignId: z.string().min(1),
+});
+
+export const updateDesignTemplateBody = z.object({
+  name: z.string().min(1).max(60).optional(),
+  imejisDesignId: z.string().min(1).optional(),
+});

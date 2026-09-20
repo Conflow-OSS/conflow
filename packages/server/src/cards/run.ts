@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { loadEnv } from "../config/load.js";
+import { getDesignTemplate } from "../store/design-templates.js";
+import { getGoldenPost } from "../store/golden-posts.js";
 import { migrate } from "../store/migrate.js";
 import {
   getPost,
@@ -17,7 +19,7 @@ import { cardContentType, renderCard } from "./imejis.js";
 
 /** How a card gets rendered. Real one calls Imejis; tests inject a fake. */
 export interface CardRenderer {
-  render(summary: string): Promise<Buffer>;
+  render(summary: string, imejisDesignId: string): Promise<Buffer>;
   contentType(): string;
 }
 
@@ -108,12 +110,13 @@ type PlaceOutcome =
  * derived from the summary text, not the post id.
  */
 async function placeCard(post: PostRow, renderer: CardRenderer, store: ImageStore): Promise<PlaceOutcome> {
-  const key = cardKey(post.summary!, renderer.contentType());
-  const previousKey = post.image_key;
-
   try {
+    const imejisDesignId = await resolvePostDesignId(post);
+    const key = cardKey(post.summary!, renderer.contentType(), imejisDesignId);
+    const previousKey = post.image_key;
+
     const alreadyStored = await store.find(key);
-    const stored = alreadyStored ?? (await renderAndStore(post.summary!, key, renderer, store));
+    const stored = alreadyStored ?? (await renderAndStore(post.summary!, imejisDesignId, key, renderer, store));
     await setPostImage(post.id, stored);
 
     if (previousKey && previousKey !== key) {
@@ -157,19 +160,46 @@ export async function deleteCardIfOrphaned(key: string, postId: string, store: I
 
 async function renderAndStore(
   summary: string,
+  imejisDesignId: string,
   key: string,
   renderer: CardRenderer,
   store: ImageStore,
 ): Promise<StoredImage> {
-  const bytes = await renderer.render(summary);
+  const bytes = await renderer.render(summary, imejisDesignId);
   return store.put(key, bytes, renderer.contentType());
 }
 
+/**
+ * The card design a post's card is rendered with — inherited from the golden
+ * post its format/hook slot was generated against. Throws BadRequestError at
+ * whichever link is missing, so `placeCard`'s catch turns it into a clear,
+ * per-post `setPostImageError` instead of failing the whole batch.
+ */
+async function resolvePostDesignId(post: PostRow): Promise<string> {
+  if (!post.golden_post_id) {
+    throw new BadRequestError(
+      `post ${post.id} has no golden post reference — it predates golden-post design assignment, or its golden post was deleted`,
+    );
+  }
+  const golden = await getGoldenPost(post.golden_post_id);
+  if (!golden) {
+    throw new BadRequestError(`post ${post.id}'s golden post no longer exists`);
+  }
+  if (!golden.design_template_id) {
+    throw new BadRequestError(`golden post ${golden.id} has no design template assigned`);
+  }
+  const template = await getDesignTemplate(golden.design_template_id);
+  if (!template) {
+    throw new BadRequestError(`golden post ${golden.id}'s design template no longer exists`);
+  }
+  return template.imejis_design_id;
+}
+
 /** Content-addressed: same design + format + summary → same key → one render, ever. */
-function cardKey(summary: string, contentType: string): string {
+function cardKey(summary: string, contentType: string, imejisDesignId: string): string {
   const env = loadEnv();
   const digest = createHash("sha256")
-    .update(`${env.IMEJIS_DESIGN_ID}:${contentType}:${summary}`)
+    .update(`${imejisDesignId}:${contentType}:${summary}`)
     .digest("hex");
   return `cards/${digest}.${env.CARD_IMAGE_FORMAT}`;
 }

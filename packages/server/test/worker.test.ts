@@ -60,6 +60,7 @@ const { migrate } = await import("../src/store/migrate.js");
 const { insertRun, getRun } = await import("../src/store/runs.js");
 const { insertTopic } = await import("../src/store/topics.js");
 const { insertPost } = await import("../src/store/posts.js");
+const { insertGoldenPost } = await import("../src/store/golden-posts.js");
 const { closeDb } = await import("../src/store/db.js");
 
 await migrate();
@@ -98,6 +99,7 @@ function fakeJob(name: string, data: unknown) {
 
 beforeEach(async () => {
   await resetTestTables();
+  await insertGoldenPost({ body: "a long/questions golden post", format: "long", hook_style: "questions" });
   model.current = makeFakeModel();
   generateCardsForRun.mockClear();
   seedDocuments.mockClear();

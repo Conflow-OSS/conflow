@@ -10,8 +10,6 @@ useTestDatabase();
 process.env.GEN_X = "3";
 process.env.GEN_Y = "2";
 process.env.GEN_Z = "2";
-process.env.SHORT_FORM_RATIO = "0.5";
-process.env.HOOK_SPLIT = "0.5";
 process.env.LENGTH_TOLERANCE = "0.15";
 process.env.DEDUP_SIBLING_THRESHOLD = "0.93";
 process.env.DEDUP_LEDGER_THRESHOLD = "0.85";
@@ -29,10 +27,17 @@ const { migrate } = await import("../src/store/migrate.js");
 const { runMatrixFlowFromTopicList, runMatrixFlowFromStory, runCaseStudyFlow } = await import(
   "../src/pipeline/run.js"
 );
+const { insertGoldenPost } = await import("../src/store/golden-posts.js");
 const { getDb, closeDb } = await import("../src/store/db.js");
 
 await migrate();
 await resetTestTables();
+
+// Three golden posts, one per category — mirrors the old fixed
+// short/questions/callout split: 12 posts / 3 goldens = 4 each.
+await insertGoldenPost({ body: "a short golden post", format: "short" });
+await insertGoldenPost({ body: "a long/questions golden post", format: "long", hook_style: "questions" });
+await insertGoldenPost({ body: "a long/callout golden post", format: "long", hook_style: "callout" });
 
 function fillerBody(marker: string, format: string): string {
   const filler = format === "short" ? "word ".repeat(90) : "word ".repeat(240);
@@ -50,8 +55,8 @@ function tagList(tagName: string, count: number): string {
 const postGenerationPrompts: string[] = [];
 
 function fieldFromPrompt(prompt: string, name: string): string {
-  // stop at an inline " — explanation" or the end of the line
-  return prompt.match(new RegExp(`${name}:\\s*(.+?)(?:\\s+—|$)`, "m"))?.[1]?.trim() ?? "";
+  // stop at an inline " (explanation)" or the end of the line
+  return prompt.match(new RegExp(`${name}:\\s*(.+?)(?:\\s+\\(|$)`, "m"))?.[1]?.trim() ?? "";
 }
 
 const fakeModel: ContentModel = {
@@ -122,7 +127,7 @@ describe("runMatrixFlowFromTopicList — 3 topics, Y=2, Z=2", () => {
   });
 
   it("creates 12 posts with the planned format split", async () => {
-    expect(await countPostsByFormat(runId)).toEqual({ short: 6, long: 6 });
+    expect(await countPostsByFormat(runId)).toEqual({ short: 4, long: 8 });
   });
 
   it("stores a distinct lesson and a summary on every post", async () => {
@@ -156,8 +161,8 @@ describe("runMatrixFlowFromTopicList — 3 topics, Y=2, Z=2", () => {
        WHERE run_id = ${runId} AND format = 'long' GROUP BY hook_style
     `;
     expect(Object.fromEntries(rows.map((row) => [row.hook_style, row.n]))).toEqual({
-      questions: 3,
-      callout: 3,
+      questions: 4,
+      callout: 4,
     });
   });
 

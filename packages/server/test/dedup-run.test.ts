@@ -9,8 +9,6 @@ const workDir = mkdtempSync(join(tmpdir(), "content-engine-dedup-"));
 useTestDatabase();
 process.env.GEN_Y = "2";
 process.env.GEN_Z = "2";
-process.env.SHORT_FORM_RATIO = "0"; // all long, so identical markers give identical bodies
-process.env.HOOK_SPLIT = "1";
 process.env.LENGTH_TOLERANCE = "0.15";
 process.env.DEDUP_SIBLING_THRESHOLD = "0.93";
 process.env.DEDUP_LEDGER_THRESHOLD = "0.85";
@@ -58,10 +56,15 @@ const identicalOutputModel: ContentModel = {
 
 const { migrate } = await import("../src/store/migrate.js");
 const { runMatrixFlowFromTopicList } = await import("../src/pipeline/run.js");
+const { insertGoldenPost } = await import("../src/store/golden-posts.js");
 const { getDb, closeDb } = await import("../src/store/db.js");
 
 await migrate();
 await resetTestTables();
+
+// One golden post, long/questions — all long, so identical markers give
+// identical bodies, matching the old SHORT_FORM_RATIO=0/HOOK_SPLIT=1 setup.
+await insertGoldenPost({ body: "a long/questions golden post", format: "long", hook_style: "questions" });
 
 let runId: string;
 
