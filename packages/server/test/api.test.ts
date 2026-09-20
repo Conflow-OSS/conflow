@@ -234,6 +234,18 @@ describe("runs", () => {
     expect(explicit.body.posts.map((p: { id: string }) => p.id)).toEqual([flagged.id]);
   });
 
+  it("hides published posts by default, shows them with includePublished=true", async () => {
+    const { run, ok, flagged } = await seedRun();
+    await request(app).put(`/v1/posts/${ok.id}/approval`).set(auth).send({ approval: "approved" });
+    await request(app).post(`/v1/posts/${ok.id}/publish`).set(auth);
+
+    const hidden = await request(app).get(`/v1/runs/${run.id}/posts`).set(auth);
+    expect(hidden.body.posts.map((p: { id: string }) => p.id)).toEqual([flagged.id]);
+
+    const shown = await request(app).get(`/v1/runs/${run.id}/posts?includePublished=true`).set(auth);
+    expect(shown.body.posts.map((p: { id: string }) => p.id).sort()).toEqual([flagged.id, ok.id].sort());
+  });
+
   it("lists topics", async () => {
     const { run } = await seedRun();
     const res = await request(app).get(`/v1/runs/${run.id}/topics`).set(auth);
@@ -293,6 +305,18 @@ describe("GET /v1/posts", () => {
 
     const res = await request(app).get(`/v1/posts?run_id=${run.id}`).set(auth);
     expect(res.body.posts.every((p: { run_id: string }) => p.run_id === run.id)).toBe(true);
+  });
+
+  it("excludes published posts unless includePublished is set", async () => {
+    const { ok } = await seedRun(); // ok + flagged, 2 generated posts
+    await request(app).put(`/v1/posts/${ok.id}/approval`).set(auth).send({ approval: "approved" });
+    await request(app).post(`/v1/posts/${ok.id}/publish`).set(auth);
+
+    const hidden = await request(app).get("/v1/posts").set(auth);
+    expect(hidden.body.posts.some((p: { id: string }) => p.id === ok.id)).toBe(false);
+
+    const shown = await request(app).get("/v1/posts?includePublished=true").set(auth);
+    expect(shown.body.posts.some((p: { id: string }) => p.id === ok.id)).toBe(true);
   });
 });
 

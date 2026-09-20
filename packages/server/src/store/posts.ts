@@ -408,6 +408,7 @@ export interface PostListFilter {
   approval?: Approval;
   includeSuperseded: boolean;
   includeRejected: boolean;
+  includePublished: boolean;
 }
 
 /**
@@ -433,6 +434,9 @@ export async function listPosts(filter: PostListFilter): Promise<{ posts: PostRo
   }
   if (!filter.includeRejected && filter.approval !== "rejected") {
     conditions.push(`approval != 'rejected'`);
+  }
+  if (!filter.includePublished) {
+    conditions.push(`published_at IS NULL`);
   }
   if (filter.runId) {
     params.push(filter.runId);

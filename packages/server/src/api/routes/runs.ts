@@ -97,11 +97,17 @@ runsRouter.get("/runs/:id", async (req, res) => {
 
 runsRouter.get("/runs/:id/posts", async (req, res) => {
   const run = await requireRun(req.params.id);
-  const { status, approval, includeSuperseded, includeRejected } = parseOrThrow(postFilterQuery, req.query);
+  const { status, approval, includeSuperseded, includeRejected, includePublished } = parseOrThrow(
+    postFilterQuery,
+    req.query,
+  );
 
   let posts = await listByRun(run.id, { includeSuperseded });
   if (!includeRejected && approval !== "rejected") {
     posts = posts.filter((post) => post.approval !== "rejected");
+  }
+  if (!includePublished) {
+    posts = posts.filter((post) => !post.published_at);
   }
   if (status === "ok") {
     posts = posts.filter((post) => post.status === "ok");

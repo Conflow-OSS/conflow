@@ -231,12 +231,12 @@ describe("listPosts", () => {
     }
     await insertPost({ kind: "seed", format: "long", body: "y".repeat(1000) });
 
-    const page1 = await listPosts({ limit: 2, offset: 0, runId: run.id, status: "all", includeSuperseded: false, includeRejected: false });
+    const page1 = await listPosts({ limit: 2, offset: 0, runId: run.id, status: "all", includeSuperseded: false, includeRejected: false, includePublished: false });
     expect(page1.total).toBe(3);
     expect(page1.posts).toHaveLength(2);
     expect(page1.posts.every((p) => p.kind === "generated")).toBe(true);
 
-    const page2 = await listPosts({ limit: 2, offset: 2, runId: run.id, status: "all", includeSuperseded: false, includeRejected: false });
+    const page2 = await listPosts({ limit: 2, offset: 2, runId: run.id, status: "all", includeSuperseded: false, includeRejected: false, includePublished: false });
     expect(page2.posts).toHaveLength(1);
   });
 
@@ -246,7 +246,7 @@ describe("listPosts", () => {
     const superseded = await insertPost({ kind: "generated", run_id: run.id, format: "long", body: "b".repeat(1000) });
     await setStatus(superseded.id, "regenerated");
 
-    const hidden = await listPosts({ limit: 50, offset: 0, runId: run.id, status: "all", includeSuperseded: false, includeRejected: false });
+    const hidden = await listPosts({ limit: 50, offset: 0, runId: run.id, status: "all", includeSuperseded: false, includeRejected: false, includePublished: false });
     expect(hidden.posts.map((p) => p.id)).toEqual([ok.id]);
 
     const shown = await listPosts({
@@ -256,6 +256,7 @@ describe("listPosts", () => {
       status: "all",
       includeSuperseded: true,
       includeRejected: false,
+      includePublished: false,
     });
     expect(shown.total).toBe(2);
   });
@@ -267,10 +268,10 @@ describe("listPosts", () => {
     const { setApproval } = await import("../src/store/posts.js");
     await setApproval(ok.id, "approved");
 
-    const okOnly = await listPosts({ limit: 50, offset: 0, runId: run.id, status: "ok", includeSuperseded: false, includeRejected: false });
+    const okOnly = await listPosts({ limit: 50, offset: 0, runId: run.id, status: "ok", includeSuperseded: false, includeRejected: false, includePublished: false });
     expect(okOnly.posts.map((p) => p.id)).toEqual([ok.id]);
 
-    const flaggedOnly = await listPosts({ limit: 50, offset: 0, runId: run.id, status: "flagged", includeSuperseded: false, includeRejected: false });
+    const flaggedOnly = await listPosts({ limit: 50, offset: 0, runId: run.id, status: "flagged", includeSuperseded: false, includeRejected: false, includePublished: false });
     expect(flaggedOnly.posts.map((p) => p.id)).toEqual([flagged.id]);
 
     const approvedOnly = await listPosts({
@@ -281,6 +282,7 @@ describe("listPosts", () => {
       approval: "approved",
       includeSuperseded: false,
       includeRejected: false,
+      includePublished: false,
     });
     expect(approvedOnly.posts.map((p) => p.id)).toEqual([ok.id]);
   });
@@ -299,6 +301,7 @@ describe("listPosts", () => {
       status: "all",
       includeSuperseded: false,
       includeRejected: false,
+      includePublished: false,
     });
     expect(hidden.posts.map((p) => p.id)).toEqual([ok.id]);
 
@@ -309,6 +312,7 @@ describe("listPosts", () => {
       status: "all",
       includeSuperseded: false,
       includeRejected: true,
+      includePublished: false,
     });
     expect(shown.total).toBe(2);
 
@@ -322,8 +326,40 @@ describe("listPosts", () => {
       approval: "rejected",
       includeSuperseded: false,
       includeRejected: false,
+      includePublished: false,
     });
     expect(explicit.posts.map((p) => p.id)).toEqual([rejected.id]);
+  });
+
+  it("excludes published posts unless includePublished is set", async () => {
+    const run = await insertRun({ flow: "matrix", config: {}, input_kind: "topic_list" });
+    const ok = await insertPost({ kind: "generated", run_id: run.id, format: "long", body: "a".repeat(1000) });
+    const published = await insertPost({ kind: "generated", run_id: run.id, format: "long", body: "b".repeat(1000) });
+    const { setApproval, publishPost } = await import("../src/store/posts.js");
+    await setApproval(published.id, "approved");
+    await publishPost(published.id);
+
+    const hidden = await listPosts({
+      limit: 50,
+      offset: 0,
+      runId: run.id,
+      status: "all",
+      includeSuperseded: false,
+      includeRejected: false,
+      includePublished: false,
+    });
+    expect(hidden.posts.map((p) => p.id)).toEqual([ok.id]);
+
+    const shown = await listPosts({
+      limit: 50,
+      offset: 0,
+      runId: run.id,
+      status: "all",
+      includeSuperseded: false,
+      includeRejected: false,
+      includePublished: true,
+    });
+    expect(shown.total).toBe(2);
   });
 });
 

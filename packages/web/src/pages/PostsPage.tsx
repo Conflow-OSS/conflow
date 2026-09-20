@@ -22,9 +22,10 @@ export function PostsPage() {
   const approval = (searchParams.get("approval") as Approval | null) ?? undefined;
   const includeSuperseded = searchParams.get("includeSuperseded") === "true";
   const includeRejected = searchParams.get("includeRejected") === "true";
+  const includePublished = searchParams.get("includePublished") === "true";
   const offset = Number(searchParams.get("offset") ?? 0);
 
-  const filter = { limit: PAGE_SIZE, offset, status, approval, includeSuperseded, includeRejected };
+  const filter = { limit: PAGE_SIZE, offset, status, approval, includeSuperseded, includeRejected, includePublished };
   const { data, isLoading, isFetching } = usePosts(filter);
   const posts = data?.posts ?? [];
   const hasNextPage = posts.length === PAGE_SIZE;
@@ -126,6 +127,13 @@ export function PostsPage() {
               onCheckedChange={(v) => updateParam("includeRejected", v ? "true" : null)}
             />
             Rejected
+          </label>
+          <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Checkbox
+              checked={includePublished}
+              onCheckedChange={(v) => updateParam("includePublished", v ? "true" : null)}
+            />
+            Published
           </label>
         </div>
       </div>

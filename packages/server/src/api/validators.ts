@@ -30,13 +30,14 @@ export const topicListQuery = z.object({
 export const postFilterQuery = z.object({
   status: z.enum(["ok", "flagged", "all"]).default("all"),
   approval: z.enum(["pending", "approved", "rejected"]).optional(),
-  // "all" still excludes superseded/rejected posts unless these are set —
-  // both are dead weight for routine review, not something a reviewer
-  // normally wants mixed into an unfiltered view. Explicitly asking for
-  // approval=rejected still works regardless of includeRejected — an
+  // "all" still excludes superseded/rejected/published posts unless these
+  // are set — all three are dead weight for routine review, not something a
+  // reviewer normally wants mixed into an unfiltered view. Explicitly asking
+  // for approval=rejected still works regardless of includeRejected — an
   // explicit filter always wins over the default-hide behavior.
   includeSuperseded: z.coerce.boolean().default(false),
   includeRejected: z.coerce.boolean().default(false),
+  includePublished: z.coerce.boolean().default(false),
 });
 
 export const postListQuery = z.object({
@@ -47,6 +48,7 @@ export const postListQuery = z.object({
   approval: z.enum(["pending", "approved", "rejected"]).optional(),
   includeSuperseded: z.coerce.boolean().default(false),
   includeRejected: z.coerce.boolean().default(false),
+  includePublished: z.coerce.boolean().default(false),
 });
 
 export const exportQuery = z.object({

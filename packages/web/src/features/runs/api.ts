@@ -42,6 +42,7 @@ export interface RunPostsFilter {
   approval?: Approval;
   includeSuperseded?: boolean;
   includeRejected?: boolean;
+  includePublished?: boolean;
 }
 
 export function getRunPosts(runId: string, filter: RunPostsFilter = {}) {
@@ -50,6 +51,7 @@ export function getRunPosts(runId: string, filter: RunPostsFilter = {}) {
   if (filter.approval) params.set("approval", filter.approval);
   if (filter.includeSuperseded) params.set("includeSuperseded", "true");
   if (filter.includeRejected) params.set("includeRejected", "true");
+  if (filter.includePublished) params.set("includePublished", "true");
   const qs = params.toString();
   return api.get<{ posts: PostRow[] }>(`/runs/${runId}/posts${qs ? `?${qs}` : ""}`);
 }
