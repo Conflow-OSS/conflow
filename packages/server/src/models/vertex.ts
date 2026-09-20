@@ -50,10 +50,17 @@ export class VertexModel implements ContentModel {
       user: args.user,
       temperature: args.temperature ?? 0.8,
       maxTokens: args.maxTokens ?? env.LLM_MAX_TOKENS,
-      // GLM's thinking mode burns most of the token budget on reasoning
-      // (8-11k tokens, 78-105s/post observed) for a voice/style task that
-      // doesn't benefit from it — disabled outright, not just tuned down.
-      extraBody: { thinking: { type: "disabled" } },
+      // GLM's thinking mode burns most of the token budget on reasoning for a
+      // voice/style task that doesn't benefit from it — disabled outright,
+      // not just tuned down. The disable knob's shape isn't stable across GLM
+      // versions: GLM-4.x/5/5.1 read `chat_template_kwargs.enable_thinking`,
+      // GLM-5.2 reads `thinking.type`, and GLM-5.3 has no off switch at all
+      // (only `reasoning_effort` to turn it down). Sending both known knobs
+      // costs nothing when the model ignores the one it doesn't recognize.
+      extraBody: {
+        thinking: { type: "disabled" },
+        chat_template_kwargs: { enable_thinking: false },
+      },
     });
   }
 }

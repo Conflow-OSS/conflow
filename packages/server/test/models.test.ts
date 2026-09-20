@@ -85,6 +85,7 @@ describe("VertexModel", () => {
     expect((init as RequestInit).headers).toMatchObject({ authorization: "Bearer fake-adc-token" });
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.thinking).toEqual({ type: "disabled" });
+    expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
   });
 
   it("retries a 500 then succeeds", async () => {
