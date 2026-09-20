@@ -18,10 +18,13 @@ goldenPostsRouter.get("/golden-posts", async (_req, res) => {
 goldenPostsRouter.post("/golden-posts", async (req, res) => {
   const body = parseOrThrow(createGoldenPostBody, req.body ?? {});
   const goldenPost = await insertGoldenPost({
+    title: body.title,
     body: body.body,
     format: body.format,
     hook_style: body.hookStyle ?? null,
     design_template_id: body.designTemplateId ?? null,
+    ideal_length_min: body.idealLengthMin,
+    ideal_length_max: body.idealLengthMax,
   });
   res.status(201).json({ goldenPost });
 });
@@ -37,10 +40,13 @@ goldenPostsRouter.get("/golden-posts/:id", async (req, res) => {
 goldenPostsRouter.patch("/golden-posts/:id", async (req, res) => {
   const body = parseOrThrow(updateGoldenPostBody, req.body ?? {});
   const goldenPost = await updateGoldenPost(req.params.id, {
+    title: body.title,
     body: body.body,
     format: body.format,
     hook_style: body.hookStyle,
     design_template_id: body.designTemplateId,
+    ideal_length_min: body.idealLengthMin,
+    ideal_length_max: body.idealLengthMax,
   });
   res.json({ goldenPost });
 });

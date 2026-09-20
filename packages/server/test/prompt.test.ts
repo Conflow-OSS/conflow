@@ -34,10 +34,13 @@ function regenerateRequest(overrides: Partial<Omit<RegenerateRequest, "mode">> =
 function golden(overrides: Partial<GoldenPostRow> = {}): GoldenPostRow {
   return {
     id: "g1",
+    title: "A post",
     body: "a post",
     format: "long",
     hook_style: "questions",
     design_template_id: null,
+    ideal_length_min: 900,
+    ideal_length_max: 1100,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
     ...overrides,

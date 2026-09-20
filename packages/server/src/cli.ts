@@ -273,50 +273,85 @@ program
 
 program
   .command("golden-add")
+  .requiredOption("--title <title>", "a short label, at most 80 characters")
   .requiredOption("--body-file <path>", "file containing the golden post's body text")
   .requiredOption("--format <format>", "short | long")
   .option("--hook-style <style>", "questions | callout (required when --format long)")
   .option("--design <design_template_id>", "a design template id to assign")
+  .requiredOption("--length-min <n>", "ideal body character count, lower bound", Number)
+  .requiredOption("--length-max <n>", "ideal body character count, upper bound", Number)
   .description("Add a golden (voice-reference) post — max 5 total")
-  .action(async (opts: { bodyFile: string; format: string; hookStyle?: string; design?: string }) => {
-    await migrate();
-    try {
-      const goldenPost = await insertGoldenPost({
-        body: readFileSync(opts.bodyFile, "utf8"),
-        format: opts.format as PostFormat,
-        hook_style: (opts.hookStyle as HookStyle) ?? null,
-        design_template_id: opts.design ?? null,
-      });
-      process.stdout.write(`${goldenPost.id} added (${goldenPost.format}/${goldenPost.hook_style ?? "n/a"})\n`);
-    } catch (error) {
-      logger.error(error instanceof Error ? error.message : String(error));
-      process.exitCode = 1;
-    }
-  });
+  .action(
+    async (opts: {
+      title: string;
+      bodyFile: string;
+      format: string;
+      hookStyle?: string;
+      design?: string;
+      lengthMin: number;
+      lengthMax: number;
+    }) => {
+      await migrate();
+      try {
+        const goldenPost = await insertGoldenPost({
+          title: opts.title,
+          body: readFileSync(opts.bodyFile, "utf8"),
+          format: opts.format as PostFormat,
+          hook_style: (opts.hookStyle as HookStyle) ?? null,
+          design_template_id: opts.design ?? null,
+          ideal_length_min: opts.lengthMin,
+          ideal_length_max: opts.lengthMax,
+        });
+        process.stdout.write(`${goldenPost.id} added (${goldenPost.format}/${goldenPost.hook_style ?? "n/a"})\n`);
+      } catch (error) {
+        logger.error(error instanceof Error ? error.message : String(error));
+        process.exitCode = 1;
+      }
+    },
+  );
 
 program
   .command("golden-update")
   .argument("<id>")
+  .option("--title <title>", "a short label, at most 80 characters")
   .option("--body-file <path>", "file containing the golden post's body text")
   .option("--format <format>", "short | long")
   .option("--hook-style <style>", "questions | callout")
   .option("--design <design_template_id>", "a design template id to assign")
+  .option("--length-min <n>", "ideal body character count, lower bound", Number)
+  .option("--length-max <n>", "ideal body character count, upper bound", Number)
   .description("Update a golden post")
-  .action(async (id: string, opts: { bodyFile?: string; format?: string; hookStyle?: string; design?: string }) => {
-    await migrate();
-    try {
-      const goldenPost = await updateGoldenPost(id, {
-        body: opts.bodyFile ? readFileSync(opts.bodyFile, "utf8") : undefined,
-        format: opts.format as PostFormat | undefined,
-        hook_style: opts.hookStyle as HookStyle | undefined,
-        design_template_id: opts.design,
-      });
-      process.stdout.write(`${goldenPost.id} updated (${goldenPost.format}/${goldenPost.hook_style ?? "n/a"})\n`);
-    } catch (error) {
-      logger.error(error instanceof Error ? error.message : String(error));
-      process.exitCode = 1;
-    }
-  });
+  .action(
+    async (
+      id: string,
+      opts: {
+        title?: string;
+        bodyFile?: string;
+        format?: string;
+        hookStyle?: string;
+        design?: string;
+        lengthMin?: number;
+        lengthMax?: number;
+      },
+    ) => {
+      await migrate();
+      try {
+        const goldenPost = await updateGoldenPost(id, {
+          title: opts.title,
+          body: opts.bodyFile ? readFileSync(opts.bodyFile, "utf8") : undefined,
+          format: opts.format as PostFormat | undefined,
+          hook_style: opts.hookStyle as HookStyle | undefined,
+          design_template_id: opts.design,
+          ideal_length_min: opts.lengthMin,
+          ideal_length_max: opts.lengthMax,
+        });
+        process.stdout.write(`${goldenPost.id} updated (${goldenPost.format}/${goldenPost.hook_style ?? "n/a"})\n`);
+      } catch (error) {
+        logger.error(error instanceof Error ? error.message : String(error));
+        process.exitCode = 1;
+      }
+    },
+  );
 
 program
   .command("golden-get")
@@ -331,8 +366,8 @@ program
       return;
     }
     process.stdout.write(
-      `${goldenPost.id}  ${goldenPost.format}/${goldenPost.hook_style ?? "n/a"}  ` +
-        `design=${goldenPost.design_template_id ?? "-"}\n\n${goldenPost.body}\n`,
+      `${goldenPost.id}  ${goldenPost.title ?? "(untitled)"}  ${goldenPost.format}/${goldenPost.hook_style ?? "n/a"}  ` +
+        `design=${goldenPost.design_template_id ?? "-"}  length=${goldenPost.ideal_length_min ?? "-"}-${goldenPost.ideal_length_max ?? "-"}\n\n${goldenPost.body}\n`,
     );
   });
 
@@ -348,7 +383,7 @@ program
     }
     for (const goldenPost of goldenPosts) {
       process.stdout.write(
-        `${goldenPost.id}  ${goldenPost.format}/${goldenPost.hook_style ?? "n/a"}  ` +
+        `${goldenPost.id}  ${goldenPost.title ?? "(untitled)"}  ${goldenPost.format}/${goldenPost.hook_style ?? "n/a"}  ` +
           `design=${goldenPost.design_template_id ?? "-"}\n` +
           `    ${goldenPost.body.slice(0, 100).replace(/\s+/g, " ")}…\n`,
       );

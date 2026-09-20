@@ -379,6 +379,32 @@ describe("golden posts", () => {
     expect(await getGoldenPost(golden.id)).toEqual(golden);
   });
 
+  it("round-trips the title and ideal length range", async () => {
+    const golden = await insertGoldenPost({
+      title: "A great post",
+      body: "a post",
+      format: "long",
+      hook_style: "questions",
+      ideal_length_min: 900,
+      ideal_length_max: 1100,
+    });
+    expect(golden.title).toBe("A great post");
+    expect(golden.ideal_length_min).toBe(900);
+    expect(golden.ideal_length_max).toBe(1100);
+
+    const updated = await updateGoldenPost(golden.id, { title: "An even better post", ideal_length_max: 1200 });
+    expect(updated.title).toBe("An even better post");
+    expect(updated.ideal_length_min).toBe(900);
+    expect(updated.ideal_length_max).toBe(1200);
+  });
+
+  it("leaves title and length range null when not supplied", async () => {
+    const golden = await insertGoldenPost({ body: "a post", format: "short" });
+    expect(golden.title).toBeNull();
+    expect(golden.ideal_length_min).toBeNull();
+    expect(golden.ideal_length_max).toBeNull();
+  });
+
   it("forces hook_style to null for a short post", async () => {
     const golden = await insertGoldenPost({ body: "a post", format: "short", hook_style: "questions" });
     expect(golden.hook_style).toBeNull();

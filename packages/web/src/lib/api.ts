@@ -14,12 +14,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-
+async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}) as { error?: string });
     throw new ApiError(body.error ?? res.statusText, res.status);
@@ -28,6 +23,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     return undefined as T;
   }
   return (await res.json()) as T;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  });
+  return handleResponse<T>(res);
+}
+
+// No Content-Type header here — fetch sets `multipart/form-data; boundary=...`
+// itself from the FormData body, so setting one manually would omit the
+// boundary and break parsing on the server.
+async function requestForm<T>(path: string, method: "POST" | "PATCH", body: FormData): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, { method, body });
+  return handleResponse<T>(res);
 }
 
 export const api = {
@@ -39,4 +50,6 @@ export const api = {
   put: <T>(path: string, body?: unknown): Promise<T> =>
     request<T>(path, { method: "PUT", body: body === undefined ? undefined : JSON.stringify(body) }),
   delete: <T>(path: string): Promise<T> => request<T>(path, { method: "DELETE" }),
+  postForm: <T>(path: string, body: FormData): Promise<T> => requestForm<T>(path, "POST", body),
+  patchForm: <T>(path: string, body: FormData): Promise<T> => requestForm<T>(path, "PATCH", body),
 };

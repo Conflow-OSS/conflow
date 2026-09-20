@@ -7,27 +7,36 @@ export const MAX_GOLDEN_POSTS = 5;
 
 const COLUMN_NAMES = [
   "id",
+  "title",
   "body",
   "format",
   "hook_style",
   "design_template_id",
+  "ideal_length_min",
+  "ideal_length_max",
   "created_at",
   "updated_at",
 ] as const;
 const COLUMNS = COLUMN_NAMES.join(", ");
 
 export interface NewGoldenPost {
+  title?: string | null;
   body: string;
   format: PostFormat;
   hook_style?: HookStyle;
   design_template_id?: string | null;
+  ideal_length_min?: number | null;
+  ideal_length_max?: number | null;
 }
 
 export interface GoldenPostPatch {
+  title?: string | null;
   body?: string;
   format?: PostFormat;
   hook_style?: HookStyle;
   design_template_id?: string | null;
+  ideal_length_min?: number | null;
+  ideal_length_max?: number | null;
 }
 
 /**
@@ -67,10 +76,13 @@ export async function insertGoldenPost(p: NewGoldenPost): Promise<GoldenPostRow>
   const now = new Date().toISOString();
   const row: GoldenPostRow = {
     id: newId(),
+    title: p.title ?? null,
     body: p.body,
     format: p.format,
     hook_style: resolveHookStyle(p.format, p.hook_style),
     design_template_id: p.design_template_id ?? null,
+    ideal_length_min: p.ideal_length_min ?? null,
+    ideal_length_max: p.ideal_length_max ?? null,
     created_at: now,
     updated_at: now,
   };
@@ -91,10 +103,13 @@ export async function updateGoldenPost(id: string, patch: GoldenPostPatch): Prom
   const sql = getDb();
   await sql`
     UPDATE golden_posts SET
+      title = ${patch.title !== undefined ? patch.title : existing.title},
       body = ${patch.body ?? existing.body},
       format = ${format},
       hook_style = ${hookStyle},
       design_template_id = ${patch.design_template_id !== undefined ? patch.design_template_id : existing.design_template_id},
+      ideal_length_min = ${patch.ideal_length_min !== undefined ? patch.ideal_length_min : existing.ideal_length_min},
+      ideal_length_max = ${patch.ideal_length_max !== undefined ? patch.ideal_length_max : existing.ideal_length_max},
       updated_at = ${new Date().toISOString()}
     WHERE id = ${id}
   `;

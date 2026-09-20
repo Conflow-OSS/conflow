@@ -7,10 +7,13 @@ import type { GoldenPostRow } from "../src/store/types.js";
 const FIXTURE_GOLDENS: GoldenPostRow[] = [
   {
     id: "g1",
+    title: "A reference post",
     body: "a reference post",
     format: "long",
     hook_style: "questions",
     design_template_id: null,
+    ideal_length_min: 900,
+    ideal_length_max: 1100,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-01T00:00:00.000Z",
   },

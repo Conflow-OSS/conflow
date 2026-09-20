@@ -1,4 +1,5 @@
 import { Icon } from "@iconify/react";
+import { useRef } from "react";
 import { NavLink, Outlet, matchPath, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +14,7 @@ import { StatusIndicator } from "@/components/ui/status-indicator";
 import { useHealth } from "@/hooks/useHealth";
 import { cn } from "@/lib/utils";
 import { BottomNav } from "./BottomNav";
+import { MobileHeader } from "./MobileHeader";
 import { NAV_ITEMS } from "./nav-items";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -27,6 +29,7 @@ export function AppShell() {
   const health = useHealth();
   const status = health.isLoading ? "idle" : health.data?.ok ? "online" : "offline";
   const statusLabel = health.isLoading ? "Checking…" : health.data?.ok ? "Connected" : "Unreachable";
+  const mainRef = useRef<HTMLElement>(null);
 
   return (
     <div className="flex h-svh overflow-hidden bg-background text-foreground">
@@ -68,19 +71,31 @@ export function AppShell() {
         </SidebarContent>
         <SidebarFooter className="flex items-center justify-between">
           <StatusIndicator status={status} label={statusLabel} />
-          <ThemeToggle />
+          <div className="flex items-center">
+            <Button asChild variant="ghost" size="icon" aria-label="Personalize">
+              <NavLink to="/personalization">
+                <Icon icon="feather:user" className="h-4 w-4" />
+              </NavLink>
+            </Button>
+            <ThemeToggle />
+          </div>
         </SidebarFooter>
       </Sidebar>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <main className={cn("flex-1 overflow-y-auto", !hideMobileNav && "pb-16 md:pb-0")}>
+        <main
+          ref={mainRef}
+          className={cn("flex-1 overflow-y-auto", !hideMobileNav && "pb-16 pt-16 md:pb-0 md:pt-0")}
+        >
           <Outlet />
         </main>
       </div>
 
-      {/* Phone — bottom tab bar + a floating Generate action, below 768px */}
+      {/* Phone — floating header, bottom tab bar, and a floating Generate action, below 768px.
+          All hidden together on the focused post-detail screen, which has its own back-header. */}
       {!hideMobileNav && (
         <>
+          <MobileHeader scrollRef={mainRef} />
           <BottomNav />
           <Button
             asChild

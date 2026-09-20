@@ -111,6 +111,9 @@ export async function migrate(): Promise<void> {
     ALTER TABLE posts ADD COLUMN IF NOT EXISTS published_at TEXT;
     ALTER TABLE posts ADD COLUMN IF NOT EXISTS superseded_by_id TEXT REFERENCES posts(id);
     ALTER TABLE posts ADD COLUMN IF NOT EXISTS golden_post_id TEXT REFERENCES golden_posts(id) ON DELETE SET NULL;
+    ALTER TABLE golden_posts ADD COLUMN IF NOT EXISTS title TEXT;
+    ALTER TABLE golden_posts ADD COLUMN IF NOT EXISTS ideal_length_min INTEGER;
+    ALTER TABLE golden_posts ADD COLUMN IF NOT EXISTS ideal_length_max INTEGER;
   `);
 
   const [row] = await sql<{ value: string }[]>`SELECT value FROM meta WHERE key = 'embed_dim'`;

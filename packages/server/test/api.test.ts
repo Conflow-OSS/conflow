@@ -563,7 +563,14 @@ describe("design-templates", () => {
     await request(app)
       .post("/v1/golden-posts")
       .set(auth)
-      .send({ body: "a golden post", format: "short", designTemplateId: add.body.designTemplate.id });
+      .send({
+        title: "A golden post",
+        body: "a golden post",
+        format: "short",
+        idealLengthMin: 300,
+        idealLengthMax: 600,
+        designTemplateId: add.body.designTemplate.id,
+      });
 
     const del = await request(app).delete(`/v1/design-templates/${add.body.designTemplate.id}`).set(auth);
     expect(del.status).toBe(200);
@@ -577,23 +584,62 @@ describe("design-templates", () => {
 });
 
 describe("golden-posts", () => {
+  function validGoldenPostBody(overrides: Record<string, unknown> = {}) {
+    return {
+      title: "A golden post",
+      body: "a golden post",
+      format: "short",
+      idealLengthMin: 300,
+      idealLengthMax: 600,
+      ...overrides,
+    };
+  }
+
   it("400s an add with no body", async () => {
-    const res = await request(app).post("/v1/golden-posts").set(auth).send({ format: "long", hookStyle: "questions" });
+    const res = await request(app)
+      .post("/v1/golden-posts")
+      .set(auth)
+      .send(validGoldenPostBody({ body: undefined, format: "long", hookStyle: "questions" }));
     expect(res.status).toBe(400);
   });
 
   it("400s a long post with no hook_style", async () => {
-    const res = await request(app).post("/v1/golden-posts").set(auth).send({ body: "a post", format: "long" });
+    const res = await request(app)
+      .post("/v1/golden-posts")
+      .set(auth)
+      .send(validGoldenPostBody({ format: "long" }));
+    expect(res.status).toBe(400);
+  });
+
+  it("400s an add with no title, or a title over 80 characters", async () => {
+    const noTitle = await request(app)
+      .post("/v1/golden-posts")
+      .set(auth)
+      .send(validGoldenPostBody({ title: undefined }));
+    expect(noTitle.status).toBe(400);
+
+    const longTitle = await request(app)
+      .post("/v1/golden-posts")
+      .set(auth)
+      .send(validGoldenPostBody({ title: "x".repeat(81) }));
+    expect(longTitle.status).toBe(400);
+  });
+
+  it("400s when idealLengthMin is greater than idealLengthMax", async () => {
+    const res = await request(app)
+      .post("/v1/golden-posts")
+      .set(auth)
+      .send(validGoldenPostBody({ idealLengthMin: 600, idealLengthMax: 300 }));
     expect(res.status).toBe(400);
   });
 
   it("adds a golden post, then lists and fetches it", async () => {
-    const add = await request(app)
-      .post("/v1/golden-posts")
-      .set(auth)
-      .send({ body: "a golden post", format: "short" });
+    const add = await request(app).post("/v1/golden-posts").set(auth).send(validGoldenPostBody());
     expect(add.status).toBe(201);
     expect(add.body.goldenPost.hook_style).toBeNull();
+    expect(add.body.goldenPost.title).toBe("A golden post");
+    expect(add.body.goldenPost.ideal_length_min).toBe(300);
+    expect(add.body.goldenPost.ideal_length_max).toBe(600);
 
     const list = await request(app).get("/v1/golden-posts").set(auth);
     expect(list.body.goldenPosts).toHaveLength(1);
@@ -608,13 +654,13 @@ describe("golden-posts", () => {
       const res = await request(app)
         .post("/v1/golden-posts")
         .set(auth)
-        .send({ body: `golden ${i}`, format: "short" });
+        .send(validGoldenPostBody({ body: `golden ${i}` }));
       expect(res.status).toBe(201);
     }
     const sixth = await request(app)
       .post("/v1/golden-posts")
       .set(auth)
-      .send({ body: "one too many", format: "short" });
+      .send(validGoldenPostBody({ body: "one too many" }));
     expect(sixth.status).toBe(409);
   });
 
@@ -622,13 +668,23 @@ describe("golden-posts", () => {
     const add = await request(app)
       .post("/v1/golden-posts")
       .set(auth)
-      .send({ body: "original", format: "short" });
+      .send(validGoldenPostBody({ body: "original" }));
     const patch = await request(app)
       .patch(`/v1/golden-posts/${add.body.goldenPost.id}`)
       .set(auth)
-      .send({ body: "updated" });
+      .send({ body: "updated", title: "Renamed" });
     expect(patch.status).toBe(200);
     expect(patch.body.goldenPost.body).toBe("updated");
+    expect(patch.body.goldenPost.title).toBe("Renamed");
+  });
+
+  it("400s an update where idealLengthMin is greater than idealLengthMax", async () => {
+    const add = await request(app).post("/v1/golden-posts").set(auth).send(validGoldenPostBody());
+    const patch = await request(app)
+      .patch(`/v1/golden-posts/${add.body.goldenPost.id}`)
+      .set(auth)
+      .send({ idealLengthMin: 600, idealLengthMax: 300 });
+    expect(patch.status).toBe(400);
   });
 
   it("404s updating an unknown golden post", async () => {
@@ -640,7 +696,7 @@ describe("golden-posts", () => {
     const add = await request(app)
       .post("/v1/golden-posts")
       .set(auth)
-      .send({ body: "to delete", format: "short" });
+      .send(validGoldenPostBody({ body: "to delete" }));
     const del = await request(app).delete(`/v1/golden-posts/${add.body.goldenPost.id}`).set(auth);
     expect(del.status).toBe(204);
 

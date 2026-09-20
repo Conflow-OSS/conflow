@@ -108,19 +108,37 @@ export const seedPostListQuery = z.object({
   offset: z.coerce.number().int().nonnegative().default(0),
 });
 
-export const createGoldenPostBody = z.object({
-  body: z.string().min(1),
-  format: z.enum(["short", "long"]),
-  hookStyle: z.enum(["questions", "callout"]).optional(),
-  designTemplateId: z.string().min(1).optional(),
-});
+export const createGoldenPostBody = z
+  .object({
+    title: z.string().min(1).max(80),
+    body: z.string().min(1),
+    format: z.enum(["short", "long"]),
+    hookStyle: z.enum(["questions", "callout"]).optional(),
+    designTemplateId: z.string().min(1).optional(),
+    idealLengthMin: z.coerce.number().int().positive(),
+    idealLengthMax: z.coerce.number().int().positive(),
+  })
+  .refine((body) => body.idealLengthMin <= body.idealLengthMax, {
+    message: "idealLengthMin must be less than or equal to idealLengthMax",
+  });
 
-export const updateGoldenPostBody = z.object({
-  body: z.string().min(1).optional(),
-  format: z.enum(["short", "long"]).optional(),
-  hookStyle: z.enum(["questions", "callout"]).nullable().optional(),
-  designTemplateId: z.string().min(1).nullable().optional(),
-});
+export const updateGoldenPostBody = z
+  .object({
+    title: z.string().min(1).max(80).optional(),
+    body: z.string().min(1).optional(),
+    format: z.enum(["short", "long"]).optional(),
+    hookStyle: z.enum(["questions", "callout"]).nullable().optional(),
+    designTemplateId: z.string().min(1).nullable().optional(),
+    idealLengthMin: z.coerce.number().int().positive().optional(),
+    idealLengthMax: z.coerce.number().int().positive().optional(),
+  })
+  .refine(
+    (body) =>
+      body.idealLengthMin === undefined ||
+      body.idealLengthMax === undefined ||
+      body.idealLengthMin <= body.idealLengthMax,
+    { message: "idealLengthMin must be less than or equal to idealLengthMax" },
+  );
 
 export const createDesignTemplateBody = z.object({
   name: z.string().min(1).max(60),

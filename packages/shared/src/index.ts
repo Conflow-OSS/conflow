@@ -33,10 +33,13 @@ export interface DesignTemplateRow {
 
 export interface GoldenPostRow {
   id: string;
+  title: string | null;
   body: string;
   format: PostFormat;
   hook_style: HookStyle;
   design_template_id: string | null;
+  ideal_length_min: number | null;
+  ideal_length_max: number | null;
   created_at: string;
   updated_at: string;
 }
