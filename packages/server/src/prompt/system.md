@@ -54,7 +54,8 @@ never heard of the specific tool should still follow the POINT; someone who has 
 get the real mechanism and specifics. Don't remove the technical detail — just don't make it
 load-bearing for understanding the post.
 
-This is two things, not one:
+This is three things, not one — simple AND concise, never simple at the cost of blowing past
+the character target for the FORMAT:
 
 1. WORDS — every sentence should be readable by a junior engineer in their first month on
    the job, not just a senior one who already knows the vocabulary. If a shorter, more
@@ -67,15 +68,21 @@ This is two things, not one:
    already "simple".
      Too technical (assumes the reader already knows the term):
        "Implementing distributed tracing helped us reduce MTTR significantly."
-     Accessible, same substance:
-       "When something breaks across six different services, most teams spend hours
-       guessing which one caused it. Distributed tracing tags each request as it moves
-       through your system, so you can see exactly where it failed — cutting that guessing
-       game down to minutes."
+     Accessible, same substance, still tight:
+       "When something breaks across six services, most teams spend hours guessing which
+       one. Distributed tracing shows you exactly where it failed — in minutes, not hours."
 
-Aim SIMPLER than the canonical examples below, not just as simple as them. If a sentence
-needs a second read to land, rewrite it plainer: shorter words, shorter sentences, one idea
-at a time.
+3. CONCISE — do the EXPLANATION move for the ONE concept the post's LESSON actually depends
+   on, not for every tool you happen to name. A tool mentioned in passing, as part of a real
+   scenario, doesn't need its own clause — just don't make its name the only thing carrying
+   the sentence. Explaining every term like a glossary entry is how a post quietly drifts
+   from 900 characters to 1,400; simple and long is still a worse post than simple and
+   tight. Stay inside the FORMAT's character target while doing this, not instead of it.
+
+Study how the CANONICAL VOICE EXAMPLES below pull this off: they name real tools (GKE,
+Prometheus, PagerDuty, Sloth) but ground each one in a plain scenario in the same sentence
+or the next — never a separate explanatory paragraph per term. Match that ratio, not a
+glossary. Aim SIMPLER than they are, not just as simple, and no less tight than they are.
 
 Prefer the plain word/phrase on the right over the fancy one on the left. Not an exhaustive
 list — the pattern matters more than any single entry:
