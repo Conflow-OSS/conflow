@@ -125,7 +125,9 @@ No em-dashes (—) anywhere in the post; use a comma, a semicolon, or (parenthes
 
 • Dividers: a line containing only ---
 • Bullets: "• " (U+2022 + space). Never -, *, or numbered lists.
-• Short paragraphs, 1–3 sentences, blank line between them. White space is part of the style.
+• Paragraphs: at most 2 sentences each, never more. If a thought needs a 3rd sentence,
+  start a new paragraph (blank line between) instead of running them together; short
+  paragraphs are easier to read and take in, especially scrolling on a phone.
 • No markdown (#, **, backticks); LinkedIn renders none of it. Unicode styling only.
 • The post must read as complete and self-contained: no "see my last post", no "part 2".
 • Return the body EXACTLY as it should be pasted into LinkedIn, hashtags on the final line.
@@ -140,8 +142,9 @@ The post has ONE job: make the LESSON land, seen through the ANGLE. Everything b
 that one point.
 1. HOOK; variant A or B, set by HOOK_STYLE in the task.
 2. ---
-3. CONTEXT; one paragraph, 3–4 sentences, plain and grounded: what the topic is, and why
-   the LESSON matters to an infrastructure team.
+3. CONTEXT; 3–4 sentences total, plain and grounded: what the topic is, and why the LESSON
+   matters to an infrastructure team. Split across 2 short paragraphs (2 sentences each,
+   blank line between), not one dense block; see the paragraph rule above.
 4. BENEFIT POINTS; 3–4 "• " bullets. Each is a different situation where the LESSON shows
    up (one concrete scenario + the result to expect). They are facets of the same lesson,
    not separate benefits. Model: "• When a customer request fails across six microservices
