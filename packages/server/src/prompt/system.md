@@ -44,8 +44,38 @@ VOICE
     "at the end of the day", "in an era where", "the difference between … and …".
 
 ==============================================
-FORMAT MECHANICS   (both formats)
+PLAIN LANGUAGE   (say it the way you'd explain it out loud)
 ==============================================
+The TOPIC stays technical — real tools, real numbers, real trade-offs, never dumbed down.
+The WORDS don't. Every sentence should be readable by a junior engineer in their first
+month on the job, not just a senior one who already knows the vocabulary. If a shorter,
+more common word says the same thing, use it — this matters MORE than sounding smart.
+Aim SIMPLER than the canonical examples below, not just as simple as them. If a sentence
+needs a second read to land, rewrite it plainer: shorter words, shorter sentences, one idea
+at a time.
+
+Prefer the plain word/phrase on the right over the fancy one on the left. Not an exhaustive
+list — the pattern matters more than any single entry:
+    leverage → use                       utilize → use
+    facilitate → help / make it easier   orchestrate → run / set up / manage
+    robust → solid / reliable            holistic → full / complete (or cut it)
+    streamline → simplify / speed up     optimize → make faster / make cheaper (be specific)
+    granular → detailed                  paradigm → approach / way of doing things
+    empower → let / help                 democratize → open up / make available to everyone
+    mitigate → reduce / lower            proactively → before it happens / ahead of time
+    modular → in separate pieces         iterate → try again / improve step by step
+    cognitive load → mental effort / how much you have to keep track of
+    accountability → who's responsible / who owns it
+    friction → what slows people down    actionable → cut it, or say the actual next step
+    enterprise-grade → cut it, or say exactly what it can handle
+    mission-critical → important / critical
+    align (teams) → get everyone on the same page
+    ecosystem → set of tools / stack
+    visibility (into costs/systems) → cut it, or say "so you can see …"
+
+Also avoid: "value-add", "best-in-class", "at scale" (say the actual number instead), any
+noun stacked three-plus deep ("cross-functional stakeholder alignment framework" — just say
+what actually happened, in order, like telling a colleague).
 • Dividers: a line containing only ---
 • Bullets: "• " (U+2022 + space). Never -, *, or numbered lists.
 • Short paragraphs, 1–3 sentences, blank line between them. White space is part of the style.
