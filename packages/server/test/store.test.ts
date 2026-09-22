@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { resetTestTables, useTestDatabase } from "./support/test-db.js";
 
 useTestDatabase();
@@ -25,6 +25,22 @@ const {
 } = await import("../src/store/vec.js");
 const { cosine } = await import("../src/util/cosine.js");
 const { closeDb, getDb } = await import("../src/store/db.js");
+const {
+  MAX_GOLDEN_POSTS,
+  insertGoldenPost,
+  getGoldenPost,
+  listGoldenPosts,
+  updateGoldenPost,
+  deleteGoldenPost,
+} = await import("../src/store/golden-posts.js");
+const {
+  insertDesignTemplate,
+  getDesignTemplate,
+  listDesignTemplates,
+  updateDesignTemplate,
+  deleteDesignTemplate,
+  goldenPostsUsingTemplate,
+} = await import("../src/store/design-templates.js");
 
 beforeAll(async () => {
   await migrate();
@@ -215,12 +231,12 @@ describe("listPosts", () => {
     }
     await insertPost({ kind: "seed", format: "long", body: "y".repeat(1000) });
 
-    const page1 = await listPosts({ limit: 2, offset: 0, runId: run.id, status: "all", includeSuperseded: false, includeRejected: false });
+    const page1 = await listPosts({ limit: 2, offset: 0, runId: run.id, status: "all", includeSuperseded: false, includeRejected: false, includePublished: false });
     expect(page1.total).toBe(3);
     expect(page1.posts).toHaveLength(2);
     expect(page1.posts.every((p) => p.kind === "generated")).toBe(true);
 
-    const page2 = await listPosts({ limit: 2, offset: 2, runId: run.id, status: "all", includeSuperseded: false, includeRejected: false });
+    const page2 = await listPosts({ limit: 2, offset: 2, runId: run.id, status: "all", includeSuperseded: false, includeRejected: false, includePublished: false });
     expect(page2.posts).toHaveLength(1);
   });
 
@@ -230,7 +246,7 @@ describe("listPosts", () => {
     const superseded = await insertPost({ kind: "generated", run_id: run.id, format: "long", body: "b".repeat(1000) });
     await setStatus(superseded.id, "regenerated");
 
-    const hidden = await listPosts({ limit: 50, offset: 0, runId: run.id, status: "all", includeSuperseded: false, includeRejected: false });
+    const hidden = await listPosts({ limit: 50, offset: 0, runId: run.id, status: "all", includeSuperseded: false, includeRejected: false, includePublished: false });
     expect(hidden.posts.map((p) => p.id)).toEqual([ok.id]);
 
     const shown = await listPosts({
@@ -240,6 +256,7 @@ describe("listPosts", () => {
       status: "all",
       includeSuperseded: true,
       includeRejected: false,
+      includePublished: false,
     });
     expect(shown.total).toBe(2);
   });
@@ -251,10 +268,10 @@ describe("listPosts", () => {
     const { setApproval } = await import("../src/store/posts.js");
     await setApproval(ok.id, "approved");
 
-    const okOnly = await listPosts({ limit: 50, offset: 0, runId: run.id, status: "ok", includeSuperseded: false, includeRejected: false });
+    const okOnly = await listPosts({ limit: 50, offset: 0, runId: run.id, status: "ok", includeSuperseded: false, includeRejected: false, includePublished: false });
     expect(okOnly.posts.map((p) => p.id)).toEqual([ok.id]);
 
-    const flaggedOnly = await listPosts({ limit: 50, offset: 0, runId: run.id, status: "flagged", includeSuperseded: false, includeRejected: false });
+    const flaggedOnly = await listPosts({ limit: 50, offset: 0, runId: run.id, status: "flagged", includeSuperseded: false, includeRejected: false, includePublished: false });
     expect(flaggedOnly.posts.map((p) => p.id)).toEqual([flagged.id]);
 
     const approvedOnly = await listPosts({
@@ -265,6 +282,7 @@ describe("listPosts", () => {
       approval: "approved",
       includeSuperseded: false,
       includeRejected: false,
+      includePublished: false,
     });
     expect(approvedOnly.posts.map((p) => p.id)).toEqual([ok.id]);
   });
@@ -283,6 +301,7 @@ describe("listPosts", () => {
       status: "all",
       includeSuperseded: false,
       includeRejected: false,
+      includePublished: false,
     });
     expect(hidden.posts.map((p) => p.id)).toEqual([ok.id]);
 
@@ -293,6 +312,7 @@ describe("listPosts", () => {
       status: "all",
       includeSuperseded: false,
       includeRejected: true,
+      includePublished: false,
     });
     expect(shown.total).toBe(2);
 
@@ -306,8 +326,40 @@ describe("listPosts", () => {
       approval: "rejected",
       includeSuperseded: false,
       includeRejected: false,
+      includePublished: false,
     });
     expect(explicit.posts.map((p) => p.id)).toEqual([rejected.id]);
+  });
+
+  it("excludes published posts unless includePublished is set", async () => {
+    const run = await insertRun({ flow: "matrix", config: {}, input_kind: "topic_list" });
+    const ok = await insertPost({ kind: "generated", run_id: run.id, format: "long", body: "a".repeat(1000) });
+    const published = await insertPost({ kind: "generated", run_id: run.id, format: "long", body: "b".repeat(1000) });
+    const { setApproval, publishPost } = await import("../src/store/posts.js");
+    await setApproval(published.id, "approved");
+    await publishPost(published.id);
+
+    const hidden = await listPosts({
+      limit: 50,
+      offset: 0,
+      runId: run.id,
+      status: "all",
+      includeSuperseded: false,
+      includeRejected: false,
+      includePublished: false,
+    });
+    expect(hidden.posts.map((p) => p.id)).toEqual([ok.id]);
+
+    const shown = await listPosts({
+      limit: 50,
+      offset: 0,
+      runId: run.id,
+      status: "all",
+      includeSuperseded: false,
+      includeRejected: false,
+      includePublished: true,
+    });
+    expect(shown.total).toBe(2);
   });
 });
 
@@ -352,3 +404,151 @@ async function backdateCreatedAt(postId: string, daysAgo: number): Promise<void>
   const backdated = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000).toISOString();
   await sql`UPDATE posts SET created_at = ${backdated} WHERE id = ${postId}`;
 }
+
+describe("golden posts", () => {
+  beforeEach(async () => {
+    await resetTestTables();
+  });
+
+  it("round-trips a golden post", async () => {
+    const golden = await insertGoldenPost({ body: "a post", format: "long", hook_style: "questions" });
+    expect(await getGoldenPost(golden.id)).toEqual(golden);
+  });
+
+  it("round-trips the title and ideal length range", async () => {
+    const golden = await insertGoldenPost({
+      title: "A great post",
+      body: "a post",
+      format: "long",
+      hook_style: "questions",
+      ideal_length_min: 900,
+      ideal_length_max: 1100,
+    });
+    expect(golden.title).toBe("A great post");
+    expect(golden.ideal_length_min).toBe(900);
+    expect(golden.ideal_length_max).toBe(1100);
+
+    const updated = await updateGoldenPost(golden.id, { title: "An even better post", ideal_length_max: 1200 });
+    expect(updated.title).toBe("An even better post");
+    expect(updated.ideal_length_min).toBe(900);
+    expect(updated.ideal_length_max).toBe(1200);
+  });
+
+  it("leaves title and length range null when not supplied", async () => {
+    const golden = await insertGoldenPost({ body: "a post", format: "short" });
+    expect(golden.title).toBeNull();
+    expect(golden.ideal_length_min).toBeNull();
+    expect(golden.ideal_length_max).toBeNull();
+  });
+
+  it("forces hook_style to null for a short post", async () => {
+    const golden = await insertGoldenPost({ body: "a post", format: "short", hook_style: "questions" });
+    expect(golden.hook_style).toBeNull();
+  });
+
+  it("rejects a long post with no hook_style", async () => {
+    await expect(insertGoldenPost({ body: "a post", format: "long" })).rejects.toThrow(/hook_style/);
+  });
+
+  it(`refuses a ${MAX_GOLDEN_POSTS + 1}th golden post`, async () => {
+    for (let i = 0; i < MAX_GOLDEN_POSTS; i++) {
+      await insertGoldenPost({ body: `post ${i}`, format: "short" });
+    }
+    await expect(insertGoldenPost({ body: "one too many", format: "short" })).rejects.toThrow(
+      /at most 5 golden posts/,
+    );
+  });
+
+  it("lists golden posts in creation order", async () => {
+    const first = await insertGoldenPost({ body: "first", format: "short" });
+    const second = await insertGoldenPost({ body: "second", format: "short" });
+    expect((await listGoldenPosts()).map((g) => g.id)).toEqual([first.id, second.id]);
+  });
+
+  it("updates a golden post, re-nulling hook_style if format becomes short", async () => {
+    const golden = await insertGoldenPost({ body: "a post", format: "long", hook_style: "callout" });
+    const updated = await updateGoldenPost(golden.id, { format: "short" });
+    expect(updated.format).toBe("short");
+    expect(updated.hook_style).toBeNull();
+  });
+
+  it("404s updating an unknown golden post", async () => {
+    await expect(updateGoldenPost("nope", { body: "x" })).rejects.toThrow(/no golden post/);
+  });
+
+  it("deletes a golden post", async () => {
+    const golden = await insertGoldenPost({ body: "a post", format: "short" });
+    await deleteGoldenPost(golden.id);
+    expect(await getGoldenPost(golden.id)).toBeUndefined();
+  });
+
+  it("404s deleting an unknown golden post", async () => {
+    await expect(deleteGoldenPost("nope")).rejects.toThrow(/no golden post/);
+  });
+});
+
+describe("design templates", () => {
+  beforeEach(async () => {
+    await resetTestTables();
+  });
+
+  function newTemplateFields(overrides: Partial<Parameters<typeof insertDesignTemplate>[0]> = {}) {
+    return {
+      name: "Blue gradient",
+      imejis_design_id: "designABC",
+      preview_image_url: "https://cdn.example/preview.png",
+      preview_image_key: "design-templates/preview.png",
+      ...overrides,
+    };
+  }
+
+  it("round-trips a design template", async () => {
+    const template = await insertDesignTemplate(newTemplateFields());
+    expect(await getDesignTemplate(template.id)).toEqual(template);
+  });
+
+  it("lists design templates in creation order", async () => {
+    const first = await insertDesignTemplate(newTemplateFields({ name: "First" }));
+    const second = await insertDesignTemplate(newTemplateFields({ name: "Second" }));
+    expect((await listDesignTemplates()).map((t) => t.id)).toEqual([first.id, second.id]);
+  });
+
+  it("updates a design template", async () => {
+    const template = await insertDesignTemplate(newTemplateFields());
+    const updated = await updateDesignTemplate(template.id, { name: "Renamed" });
+    expect(updated.name).toBe("Renamed");
+    expect(updated.imejis_design_id).toBe(template.imejis_design_id);
+  });
+
+  it("404s updating an unknown design template", async () => {
+    await expect(updateDesignTemplate("nope", { name: "x" })).rejects.toThrow(/no design template/);
+  });
+
+  it("deletes a design template", async () => {
+    const template = await insertDesignTemplate(newTemplateFields());
+    await deleteDesignTemplate(template.id);
+    expect(await getDesignTemplate(template.id)).toBeUndefined();
+  });
+
+  it("404s deleting an unknown design template", async () => {
+    await expect(deleteDesignTemplate("nope")).rejects.toThrow(/no design template/);
+  });
+
+  it("counts how many golden posts use a template", async () => {
+    const template = await insertDesignTemplate(newTemplateFields());
+    expect(await goldenPostsUsingTemplate(template.id)).toBe(0);
+
+    await insertGoldenPost({ body: "a", format: "short", design_template_id: template.id });
+    await insertGoldenPost({ body: "b", format: "short", design_template_id: template.id });
+    expect(await goldenPostsUsingTemplate(template.id)).toBe(2);
+  });
+
+  it("detaches (not blocks) golden posts when their template is deleted", async () => {
+    const template = await insertDesignTemplate(newTemplateFields());
+    const golden = await insertGoldenPost({ body: "a", format: "short", design_template_id: template.id });
+
+    await deleteDesignTemplate(template.id);
+
+    expect((await getGoldenPost(golden.id))!.design_template_id).toBeNull();
+  });
+});

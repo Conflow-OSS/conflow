@@ -1,14 +1,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { HookStyle, PostFormat } from "../store/types.js";
+import type { GoldenPostRow, HookStyle, PostFormat } from "../store/types.js";
 
 const promptDirectory = import.meta.dirname;
-
-const goldenExampleFileByPlaceholder = {
-  "{{GOLDEN_LONG_QUESTIONS}}": "goldens/long-questions.md",
-  "{{GOLDEN_LONG_CALLOUT}}": "goldens/long-callout.md",
-  "{{GOLDEN_SHORT}}": "goldens/short.md",
-};
 
 /** The fields both a first draft and a revision need. */
 interface CommonFields {
@@ -41,9 +35,9 @@ export interface AssembledPrompt {
   user: string;
 }
 
-export function assemblePrompt(request: PostRequest): AssembledPrompt {
+export function assemblePrompt(request: PostRequest, goldenPosts: GoldenPostRow[]): AssembledPrompt {
   return {
-    system: buildSystemPrompt(),
+    system: buildSystemPrompt(goldenPosts),
     user: buildUserPrompt(request),
   };
 }
@@ -60,12 +54,18 @@ function fillTemplate(template: string, valueByPlaceholder: Record<string, strin
   return filled;
 }
 
-function buildSystemPrompt(): string {
-  let systemPrompt = readPromptFile("system.md");
-  for (const [placeholder, file] of Object.entries(goldenExampleFileByPlaceholder)) {
-    systemPrompt = systemPrompt.replaceAll(placeholder, readPromptFile(file).trim());
-  }
-  return systemPrompt;
+function buildSystemPrompt(goldenPosts: GoldenPostRow[]): string {
+  const systemPrompt = readPromptFile("system.md");
+  return systemPrompt.replaceAll("{{GOLDEN_EXAMPLES}}", renderGoldenExamples(goldenPosts));
+}
+
+function renderGoldenExamples(goldenPosts: GoldenPostRow[]): string {
+  return goldenPosts
+    .map(
+      (golden) =>
+        `<example format="${golden.format}" hook="${golden.hook_style ?? "n/a"}">\n${golden.body.trim()}\n</example>`,
+    )
+    .join("\n");
 }
 
 function buildUserPrompt(request: PostRequest): string {

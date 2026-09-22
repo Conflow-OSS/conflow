@@ -7,3 +7,4 @@ data/
 coverage/
 .continue
 .mcp.json
+.playwright-mcp/

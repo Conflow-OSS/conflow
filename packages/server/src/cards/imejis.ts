@@ -12,13 +12,13 @@ const RENDER_BASE_URL = "https://render.imejis.io/v1";
  * template default because we leave it out of the body. Imejis expects the
  * layer value as an object, so a bare string will not take effect.
  */
-export async function renderCard(summary: string): Promise<Buffer> {
+export async function renderCard(summary: string, imejisDesignId: string): Promise<Buffer> {
   const env = loadEnv();
   if (!env.IMEJIS_API_KEY) {
     throw new Error("IMEJIS_API_KEY is required to render cards");
   }
 
-  const url = `${RENDER_BASE_URL}/${env.IMEJIS_DESIGN_ID}?format=${env.CARD_IMAGE_FORMAT}`;
+  const url = `${RENDER_BASE_URL}/${imejisDesignId}?format=${env.CARD_IMAGE_FORMAT}`;
 
   return withRetry(async (signal) => {
     const response = await fetch(url, {

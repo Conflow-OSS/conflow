@@ -21,6 +21,8 @@ import { getModel } from "../src/models/factory.js";
 import { expandAngleIntoLessons } from "../src/pipeline/expand.js";
 import { parsePostXml } from "../src/pipeline/parse.js";
 import { assemblePrompt } from "../src/prompt/assemble.js";
+import { listGoldenPosts } from "../src/store/golden-posts.js";
+import { migrate } from "../src/store/migrate.js";
 import type { HookStyle } from "../src/store/types.js";
 import { logger } from "../src/util/logger.js";
 
@@ -95,24 +97,34 @@ async function main() {
   mkdirSync(OUT, { recursive: true });
   logger.info("voice-eval start", { channel: model.channel, model: model.model, cases: cases.length });
 
+  await migrate();
+  const goldenPosts = await listGoldenPosts();
+  if (goldenPosts.length === 0) {
+    logger.error("no golden posts in the database — add some with `content golden-add` first");
+    return;
+  }
+
   for (let index = 0; index < cases.length; index++) {
     const testCase = cases[index]!;
     const label = String(index + 1).padStart(2, "0");
     try {
       const startedAt = Date.now();
       const [lesson] = await expandAngleIntoLessons(testCase.topic, testCase.angle, 1, model);
-      const { system, user } = assemblePrompt({
-        mode: "generate",
-        topic: testCase.topic,
-        angle: testCase.angle,
-        lesson: lesson ?? testCase.angle,
-        otherLessons: [],
-        format: testCase.format,
-        hookStyle: toHookStyle(testCase.hook),
-        variantNumber: 1,
-        variantCount: 1,
-        summaryMaxChars: env.SUMMARY_MAX_CHARS,
-      });
+      const { system, user } = assemblePrompt(
+        {
+          mode: "generate",
+          topic: testCase.topic,
+          angle: testCase.angle,
+          lesson: lesson ?? testCase.angle,
+          otherLessons: [],
+          format: testCase.format,
+          hookStyle: toHookStyle(testCase.hook),
+          variantNumber: 1,
+          variantCount: 1,
+          summaryMaxChars: env.SUMMARY_MAX_CHARS,
+        },
+        goldenPosts,
+      );
       const result = await model.generate({ system, user, temperature: env.LLM_TEMPERATURE });
       const parsed = parsePostXml(result.text);
       const elapsedMs = Date.now() - startedAt;

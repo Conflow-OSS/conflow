@@ -10,8 +10,6 @@ useTestDatabase();
 process.env.EXPORT_DIR = join(workDir, "exports");
 process.env.GEN_Y = "1";
 process.env.GEN_Z = "2";
-process.env.SHORT_FORM_RATIO = "0.5";
-process.env.HOOK_SPLIT = "1";
 process.env.LOG_LEVEL = "error";
 
 vi.mock("../src/embeddings/voyage.js", async () => {
@@ -23,7 +21,7 @@ vi.mock("../src/embeddings/voyage.js", async () => {
 });
 
 function field(prompt: string, name: string): string {
-  return prompt.match(new RegExp(`${name}:\\s*(.+?)(?:\\s+—|$)`, "m"))?.[1]?.trim() ?? "";
+  return prompt.match(new RegExp(`${name}:\\s*(.+?)(?:\\s+\\(|$)`, "m"))?.[1]?.trim() ?? "";
 }
 
 const fakeModel: ContentModel = {
@@ -56,10 +54,13 @@ const fakeModel: ContentModel = {
 const { migrate } = await import("../src/store/migrate.js");
 const { runMatrixFlowFromTopicList } = await import("../src/pipeline/run.js");
 const { exportRun } = await import("../src/export/index.js");
+const { insertGoldenPost } = await import("../src/store/golden-posts.js");
 const { closeDb } = await import("../src/store/db.js");
 
 await migrate();
 await resetTestTables();
+
+await insertGoldenPost({ body: "a long/questions golden post", format: "long", hook_style: "questions" });
 
 let runId: string;
 

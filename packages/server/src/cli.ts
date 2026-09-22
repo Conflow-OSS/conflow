@@ -1,8 +1,16 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
 import { Command } from "commander";
 import { loadEnv } from "./config/load.js";
 import type { MatrixRunResult } from "./pipeline/run.js";
 import { closeDb } from "./store/db.js";
+import {
+  deleteGoldenPost,
+  getGoldenPost,
+  insertGoldenPost,
+  listGoldenPosts,
+  updateGoldenPost,
+} from "./store/golden-posts.js";
 import { migrate } from "./store/migrate.js";
 import {
   approvePendingInRun,
@@ -11,7 +19,7 @@ import {
   listByRun,
   listFlagged,
 } from "./store/posts.js";
-import type { Approval } from "./store/types.js";
+import type { Approval, HookStyle, PostFormat } from "./store/types.js";
 import { getRun, latestRun } from "./store/runs.js";
 import { listTopicsByRun } from "./store/topics.js";
 import { countEmbeddings } from "./store/vec.js";
@@ -262,6 +270,252 @@ program
     const { url } = await generateOneCard({ postId, renderer: imejisRenderer, store: getImageStore() });
     process.stdout.write(`${postId} → ${url}\n`);
   });
+
+program
+  .command("golden-add")
+  .requiredOption("--title <title>", "a short label, at most 80 characters")
+  .requiredOption("--body-file <path>", "file containing the golden post's body text")
+  .requiredOption("--format <format>", "short | long")
+  .option("--hook-style <style>", "questions | callout (required when --format long)")
+  .option("--design <design_template_id>", "a design template id to assign")
+  .requiredOption("--length-min <n>", "ideal body character count, lower bound", Number)
+  .requiredOption("--length-max <n>", "ideal body character count, upper bound", Number)
+  .description("Add a golden (voice-reference) post — max 5 total")
+  .action(
+    async (opts: {
+      title: string;
+      bodyFile: string;
+      format: string;
+      hookStyle?: string;
+      design?: string;
+      lengthMin: number;
+      lengthMax: number;
+    }) => {
+      await migrate();
+      try {
+        const goldenPost = await insertGoldenPost({
+          title: opts.title,
+          body: readFileSync(opts.bodyFile, "utf8"),
+          format: opts.format as PostFormat,
+          hook_style: (opts.hookStyle as HookStyle) ?? null,
+          design_template_id: opts.design ?? null,
+          ideal_length_min: opts.lengthMin,
+          ideal_length_max: opts.lengthMax,
+        });
+        process.stdout.write(`${goldenPost.id} added (${goldenPost.format}/${goldenPost.hook_style ?? "n/a"})\n`);
+      } catch (error) {
+        logger.error(error instanceof Error ? error.message : String(error));
+        process.exitCode = 1;
+      }
+    },
+  );
+
+program
+  .command("golden-update")
+  .argument("<id>")
+  .option("--title <title>", "a short label, at most 80 characters")
+  .option("--body-file <path>", "file containing the golden post's body text")
+  .option("--format <format>", "short | long")
+  .option("--hook-style <style>", "questions | callout")
+  .option("--design <design_template_id>", "a design template id to assign")
+  .option("--length-min <n>", "ideal body character count, lower bound", Number)
+  .option("--length-max <n>", "ideal body character count, upper bound", Number)
+  .description("Update a golden post")
+  .action(
+    async (
+      id: string,
+      opts: {
+        title?: string;
+        bodyFile?: string;
+        format?: string;
+        hookStyle?: string;
+        design?: string;
+        lengthMin?: number;
+        lengthMax?: number;
+      },
+    ) => {
+      await migrate();
+      try {
+        const goldenPost = await updateGoldenPost(id, {
+          title: opts.title,
+          body: opts.bodyFile ? readFileSync(opts.bodyFile, "utf8") : undefined,
+          format: opts.format as PostFormat | undefined,
+          hook_style: opts.hookStyle as HookStyle | undefined,
+          design_template_id: opts.design,
+          ideal_length_min: opts.lengthMin,
+          ideal_length_max: opts.lengthMax,
+        });
+        process.stdout.write(`${goldenPost.id} updated (${goldenPost.format}/${goldenPost.hook_style ?? "n/a"})\n`);
+      } catch (error) {
+        logger.error(error instanceof Error ? error.message : String(error));
+        process.exitCode = 1;
+      }
+    },
+  );
+
+program
+  .command("golden-get")
+  .argument("<id>")
+  .description("Print one golden post")
+  .action(async (id: string) => {
+    await migrate();
+    const goldenPost = await getGoldenPost(id);
+    if (!goldenPost) {
+      logger.error(`no golden post with id ${id}`);
+      process.exitCode = 1;
+      return;
+    }
+    process.stdout.write(
+      `${goldenPost.id}  ${goldenPost.title ?? "(untitled)"}  ${goldenPost.format}/${goldenPost.hook_style ?? "n/a"}  ` +
+        `design=${goldenPost.design_template_id ?? "-"}  length=${goldenPost.ideal_length_min ?? "-"}-${goldenPost.ideal_length_max ?? "-"}\n\n${goldenPost.body}\n`,
+    );
+  });
+
+program
+  .command("golden-list")
+  .description("List every golden post")
+  .action(async () => {
+    await migrate();
+    const goldenPosts = await listGoldenPosts();
+    if (goldenPosts.length === 0) {
+      logger.info("no golden posts yet — add one with golden-add");
+      return;
+    }
+    for (const goldenPost of goldenPosts) {
+      process.stdout.write(
+        `${goldenPost.id}  ${goldenPost.title ?? "(untitled)"}  ${goldenPost.format}/${goldenPost.hook_style ?? "n/a"}  ` +
+          `design=${goldenPost.design_template_id ?? "-"}\n` +
+          `    ${goldenPost.body.slice(0, 100).replace(/\s+/g, " ")}…\n`,
+      );
+    }
+  });
+
+program
+  .command("golden-delete")
+  .argument("<id>")
+  .description("Delete a golden post")
+  .action(async (id: string) => {
+    await migrate();
+    try {
+      await deleteGoldenPost(id);
+      process.stdout.write(`${id} deleted\n`);
+    } catch (error) {
+      logger.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("design-add")
+  .requiredOption("--name <name>", "a short label, at most 60 characters")
+  .requiredOption("--imejis-id <id>", "the Imejis design ID this template renders with")
+  .requiredOption("--image-file <path>", "a preview image (png/jpeg/webp) for the picker UI")
+  .description("Add a design template")
+  .action(async (opts: { name: string; imejisId: string; imageFile: string }) => {
+    await migrate();
+    try {
+      const { createDesignTemplate } = await import("./design-templates/manage.js");
+      const designTemplate = await createDesignTemplate({
+        name: opts.name,
+        imejisDesignId: opts.imejisId,
+        imageBuffer: readFileSync(opts.imageFile),
+        contentType: contentTypeFromPath(opts.imageFile),
+      });
+      process.stdout.write(`${designTemplate.id} added (${designTemplate.name})\n`);
+    } catch (error) {
+      logger.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("design-update")
+  .argument("<id>")
+  .option("--name <name>", "a short label, at most 60 characters")
+  .option("--imejis-id <id>", "the Imejis design ID this template renders with")
+  .option("--image-file <path>", "a replacement preview image (png/jpeg/webp)")
+  .description("Update a design template")
+  .action(async (id: string, opts: { name?: string; imejisId?: string; imageFile?: string }) => {
+    await migrate();
+    try {
+      const { editDesignTemplate } = await import("./design-templates/manage.js");
+      const designTemplate = await editDesignTemplate(id, {
+        name: opts.name,
+        imejisDesignId: opts.imejisId,
+        image: opts.imageFile
+          ? { buffer: readFileSync(opts.imageFile), contentType: contentTypeFromPath(opts.imageFile) }
+          : undefined,
+      });
+      process.stdout.write(`${designTemplate.id} updated (${designTemplate.name})\n`);
+    } catch (error) {
+      logger.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("design-get")
+  .argument("<id>")
+  .description("Print one design template")
+  .action(async (id: string) => {
+    await migrate();
+    const { getDesignTemplate } = await import("./store/design-templates.js");
+    const designTemplate = await getDesignTemplate(id);
+    if (!designTemplate) {
+      logger.error(`no design template with id ${id}`);
+      process.exitCode = 1;
+      return;
+    }
+    process.stdout.write(
+      `${designTemplate.id}  ${designTemplate.name}  imejis=${designTemplate.imejis_design_id}\n` +
+        `preview: ${designTemplate.preview_image_url}\n`,
+    );
+  });
+
+program
+  .command("design-list")
+  .description("List every design template")
+  .action(async () => {
+    await migrate();
+    const { listDesignTemplates } = await import("./store/design-templates.js");
+    const designTemplates = await listDesignTemplates();
+    if (designTemplates.length === 0) {
+      logger.info("no design templates yet — add one with design-add");
+      return;
+    }
+    for (const designTemplate of designTemplates) {
+      process.stdout.write(
+        `${designTemplate.id}  ${designTemplate.name}  imejis=${designTemplate.imejis_design_id}\n`,
+      );
+    }
+  });
+
+program
+  .command("design-delete")
+  .argument("<id>")
+  .description("Delete a design template")
+  .action(async (id: string) => {
+    await migrate();
+    try {
+      const { removeDesignTemplate } = await import("./design-templates/manage.js");
+      const { detachedGoldenPosts } = await removeDesignTemplate(id);
+      process.stdout.write(
+        `${id} deleted` +
+          (detachedGoldenPosts > 0 ? ` (${detachedGoldenPosts} golden post(s) unassigned)\n` : "\n"),
+      );
+    } catch (error) {
+      logger.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+    }
+  });
+
+function contentTypeFromPath(path: string): string {
+  const extension = path.split(".").pop()?.toLowerCase();
+  if (extension === "png") return "image/png";
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+  if (extension === "webp") return "image/webp";
+  throw new Error(`unsupported image extension in ${path} — use .png, .jpg/.jpeg, or .webp`);
+}
 
 program
   .command("stats")

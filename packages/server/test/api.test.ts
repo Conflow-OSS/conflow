@@ -75,8 +75,27 @@ const { insertRun, setRunJobId } = await import("../src/store/runs.js");
 const { insertTopic } = await import("../src/store/topics.js");
 const { insertPost, setStatus, setPostImage } = await import("../src/store/posts.js");
 const { getRun } = await import("../src/store/runs.js");
+const { insertGoldenPost } = await import("../src/store/golden-posts.js");
+const { insertDesignTemplate } = await import("../src/store/design-templates.js");
 const { closeDb } = await import("../src/store/db.js");
 const { LocalDiskImageStore } = await import("../src/cards/disk-store.js");
+
+/** A golden post with a design template assigned — for posts that need a card. */
+async function cardReadyGoldenPostId(): Promise<string> {
+  const designTemplate = await insertDesignTemplate({
+    name: "Default",
+    imejis_design_id: "designX",
+    preview_image_url: "https://cdn.example/preview.png",
+    preview_image_key: "design-templates/preview.png",
+  });
+  const goldenPost = await insertGoldenPost({
+    body: "a golden post",
+    format: "long",
+    hook_style: "questions",
+    design_template_id: designTemplate.id,
+  });
+  return goldenPost.id;
+}
 
 await migrate();
 const app = await createApp();
@@ -104,6 +123,7 @@ async function seedRun() {
     body: "a".repeat(1000),
     summary: "one-line summary",
     status: "ok",
+    golden_post_id: await cardReadyGoldenPostId(),
   });
   const flagged = await insertPost({
     kind: "generated",
@@ -214,6 +234,18 @@ describe("runs", () => {
     expect(explicit.body.posts.map((p: { id: string }) => p.id)).toEqual([flagged.id]);
   });
 
+  it("hides published posts by default, shows them with includePublished=true", async () => {
+    const { run, ok, flagged } = await seedRun();
+    await request(app).put(`/v1/posts/${ok.id}/approval`).set(auth).send({ approval: "approved" });
+    await request(app).post(`/v1/posts/${ok.id}/publish`).set(auth);
+
+    const hidden = await request(app).get(`/v1/runs/${run.id}/posts`).set(auth);
+    expect(hidden.body.posts.map((p: { id: string }) => p.id)).toEqual([flagged.id]);
+
+    const shown = await request(app).get(`/v1/runs/${run.id}/posts?includePublished=true`).set(auth);
+    expect(shown.body.posts.map((p: { id: string }) => p.id).sort()).toEqual([flagged.id, ok.id].sort());
+  });
+
   it("lists topics", async () => {
     const { run } = await seedRun();
     const res = await request(app).get(`/v1/runs/${run.id}/topics`).set(auth);
@@ -273,6 +305,18 @@ describe("GET /v1/posts", () => {
 
     const res = await request(app).get(`/v1/posts?run_id=${run.id}`).set(auth);
     expect(res.body.posts.every((p: { run_id: string }) => p.run_id === run.id)).toBe(true);
+  });
+
+  it("excludes published posts unless includePublished is set", async () => {
+    const { ok } = await seedRun(); // ok + flagged, 2 generated posts
+    await request(app).put(`/v1/posts/${ok.id}/approval`).set(auth).send({ approval: "approved" });
+    await request(app).post(`/v1/posts/${ok.id}/publish`).set(auth);
+
+    const hidden = await request(app).get("/v1/posts").set(auth);
+    expect(hidden.body.posts.some((p: { id: string }) => p.id === ok.id)).toBe(false);
+
+    const shown = await request(app).get("/v1/posts?includePublished=true").set(auth);
+    expect(shown.body.posts.some((p: { id: string }) => p.id === ok.id)).toBe(true);
   });
 });
 
@@ -482,6 +526,210 @@ describe("seed-posts", () => {
 
   it("404s deleting an unknown seed post", async () => {
     const res = await request(app).delete("/v1/seed-posts/nope").set(auth);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("design-templates", () => {
+  const png = Buffer.from([137, 80, 78, 71, 1, 2, 3]);
+
+  it("adds a design template with an uploaded preview image, then lists it", async () => {
+    const add = await request(app)
+      .post("/v1/design-templates")
+      .set(auth)
+      .field("name", "Blue gradient")
+      .field("imejisDesignId", "designABC")
+      .attach("image", png, { filename: "preview.png", contentType: "image/png" });
+    expect(add.status).toBe(201);
+    expect(add.body.designTemplate.name).toBe("Blue gradient");
+    expect(add.body.designTemplate.imejis_design_id).toBe("designABC");
+    expect(add.body.designTemplate.preview_image_url).toContain("file://");
+
+    const list = await request(app).get("/v1/design-templates").set(auth);
+    expect(list.status).toBe(200);
+    expect(list.body.designTemplates).toHaveLength(1);
+  });
+
+  it("400s an add with no image", async () => {
+    const res = await request(app)
+      .post("/v1/design-templates")
+      .set(auth)
+      .field("name", "No image")
+      .field("imejisDesignId", "designXYZ");
+    expect(res.status).toBe(400);
+  });
+
+  it("updates a design template's name without replacing its image", async () => {
+    const add = await request(app)
+      .post("/v1/design-templates")
+      .set(auth)
+      .field("name", "Original")
+      .field("imejisDesignId", "designABC")
+      .attach("image", png, { filename: "preview.png", contentType: "image/png" });
+
+    const patch = await request(app)
+      .patch(`/v1/design-templates/${add.body.designTemplate.id}`)
+      .set(auth)
+      .field("name", "Renamed");
+    expect(patch.status).toBe(200);
+    expect(patch.body.designTemplate.name).toBe("Renamed");
+    expect(patch.body.designTemplate.preview_image_url).toBe(add.body.designTemplate.preview_image_url);
+  });
+
+  it("deletes a design template and reports how many golden posts were detached", async () => {
+    const add = await request(app)
+      .post("/v1/design-templates")
+      .set(auth)
+      .field("name", "To delete")
+      .field("imejisDesignId", "designABC")
+      .attach("image", png, { filename: "preview.png", contentType: "image/png" });
+
+    await request(app)
+      .post("/v1/golden-posts")
+      .set(auth)
+      .send({
+        title: "A golden post",
+        body: "a golden post",
+        format: "short",
+        idealLengthMin: 300,
+        idealLengthMax: 600,
+        designTemplateId: add.body.designTemplate.id,
+      });
+
+    const del = await request(app).delete(`/v1/design-templates/${add.body.designTemplate.id}`).set(auth);
+    expect(del.status).toBe(200);
+    expect(del.body.detachedGoldenPosts).toBe(1);
+  });
+
+  it("404s deleting an unknown design template", async () => {
+    const res = await request(app).delete("/v1/design-templates/nope").set(auth);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("golden-posts", () => {
+  function validGoldenPostBody(overrides: Record<string, unknown> = {}) {
+    return {
+      title: "A golden post",
+      body: "a golden post",
+      format: "short",
+      idealLengthMin: 300,
+      idealLengthMax: 600,
+      ...overrides,
+    };
+  }
+
+  it("400s an add with no body", async () => {
+    const res = await request(app)
+      .post("/v1/golden-posts")
+      .set(auth)
+      .send(validGoldenPostBody({ body: undefined, format: "long", hookStyle: "questions" }));
+    expect(res.status).toBe(400);
+  });
+
+  it("400s a long post with no hook_style", async () => {
+    const res = await request(app)
+      .post("/v1/golden-posts")
+      .set(auth)
+      .send(validGoldenPostBody({ format: "long" }));
+    expect(res.status).toBe(400);
+  });
+
+  it("400s an add with no title, or a title over 80 characters", async () => {
+    const noTitle = await request(app)
+      .post("/v1/golden-posts")
+      .set(auth)
+      .send(validGoldenPostBody({ title: undefined }));
+    expect(noTitle.status).toBe(400);
+
+    const longTitle = await request(app)
+      .post("/v1/golden-posts")
+      .set(auth)
+      .send(validGoldenPostBody({ title: "x".repeat(81) }));
+    expect(longTitle.status).toBe(400);
+  });
+
+  it("400s when idealLengthMin is greater than idealLengthMax", async () => {
+    const res = await request(app)
+      .post("/v1/golden-posts")
+      .set(auth)
+      .send(validGoldenPostBody({ idealLengthMin: 600, idealLengthMax: 300 }));
+    expect(res.status).toBe(400);
+  });
+
+  it("adds a golden post, then lists and fetches it", async () => {
+    const add = await request(app).post("/v1/golden-posts").set(auth).send(validGoldenPostBody());
+    expect(add.status).toBe(201);
+    expect(add.body.goldenPost.hook_style).toBeNull();
+    expect(add.body.goldenPost.title).toBe("A golden post");
+    expect(add.body.goldenPost.ideal_length_min).toBe(300);
+    expect(add.body.goldenPost.ideal_length_max).toBe(600);
+
+    const list = await request(app).get("/v1/golden-posts").set(auth);
+    expect(list.body.goldenPosts).toHaveLength(1);
+
+    const get = await request(app).get(`/v1/golden-posts/${add.body.goldenPost.id}`).set(auth);
+    expect(get.status).toBe(200);
+    expect(get.body.goldenPost.body).toBe("a golden post");
+  });
+
+  it("409s adding a 6th golden post", async () => {
+    for (let i = 0; i < 5; i++) {
+      const res = await request(app)
+        .post("/v1/golden-posts")
+        .set(auth)
+        .send(validGoldenPostBody({ body: `golden ${i}` }));
+      expect(res.status).toBe(201);
+    }
+    const sixth = await request(app)
+      .post("/v1/golden-posts")
+      .set(auth)
+      .send(validGoldenPostBody({ body: "one too many" }));
+    expect(sixth.status).toBe(409);
+  });
+
+  it("updates a golden post", async () => {
+    const add = await request(app)
+      .post("/v1/golden-posts")
+      .set(auth)
+      .send(validGoldenPostBody({ body: "original" }));
+    const patch = await request(app)
+      .patch(`/v1/golden-posts/${add.body.goldenPost.id}`)
+      .set(auth)
+      .send({ body: "updated", title: "Renamed" });
+    expect(patch.status).toBe(200);
+    expect(patch.body.goldenPost.body).toBe("updated");
+    expect(patch.body.goldenPost.title).toBe("Renamed");
+  });
+
+  it("400s an update where idealLengthMin is greater than idealLengthMax", async () => {
+    const add = await request(app).post("/v1/golden-posts").set(auth).send(validGoldenPostBody());
+    const patch = await request(app)
+      .patch(`/v1/golden-posts/${add.body.goldenPost.id}`)
+      .set(auth)
+      .send({ idealLengthMin: 600, idealLengthMax: 300 });
+    expect(patch.status).toBe(400);
+  });
+
+  it("404s updating an unknown golden post", async () => {
+    const res = await request(app).patch("/v1/golden-posts/nope").set(auth).send({ body: "x" });
+    expect(res.status).toBe(404);
+  });
+
+  it("deletes a golden post", async () => {
+    const add = await request(app)
+      .post("/v1/golden-posts")
+      .set(auth)
+      .send(validGoldenPostBody({ body: "to delete" }));
+    const del = await request(app).delete(`/v1/golden-posts/${add.body.goldenPost.id}`).set(auth);
+    expect(del.status).toBe(204);
+
+    const list = await request(app).get("/v1/golden-posts").set(auth);
+    expect(list.body.goldenPosts).toHaveLength(0);
+  });
+
+  it("404s deleting an unknown golden post", async () => {
+    const res = await request(app).delete("/v1/golden-posts/nope").set(auth);
     expect(res.status).toBe(404);
   });
 });

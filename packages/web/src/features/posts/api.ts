@@ -9,6 +9,7 @@ export interface PostListFilter {
   approval?: Approval;
   includeSuperseded?: boolean;
   includeRejected?: boolean;
+  includePublished?: boolean;
 }
 
 export interface PostListResult {
@@ -27,6 +28,7 @@ export function listPosts(filter: PostListFilter = {}) {
   if (filter.approval) params.set("approval", filter.approval);
   if (filter.includeSuperseded) params.set("includeSuperseded", "true");
   if (filter.includeRejected) params.set("includeRejected", "true");
+  if (filter.includePublished) params.set("includePublished", "true");
   const qs = params.toString();
   return api.get<PostListResult>(`/posts${qs ? `?${qs}` : ""}`);
 }

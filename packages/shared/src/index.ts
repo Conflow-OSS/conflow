@@ -21,6 +21,29 @@ export type Approval = "pending" | "approved" | "rejected";
 
 export type RunStatus = "queued" | "running" | "completed" | "failed";
 
+export interface DesignTemplateRow {
+  id: string;
+  name: string;
+  imejis_design_id: string;
+  preview_image_url: string;
+  preview_image_key: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GoldenPostRow {
+  id: string;
+  title: string | null;
+  body: string;
+  format: PostFormat;
+  hook_style: HookStyle;
+  design_template_id: string | null;
+  ideal_length_min: number | null;
+  ideal_length_max: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface RunRow {
   id: string;
   flow: Flow;
@@ -72,4 +95,5 @@ export interface PostRow {
   model_channel: string | null;
   model_id: string | null;
   created_at: string;
+  golden_post_id: string | null;
 }

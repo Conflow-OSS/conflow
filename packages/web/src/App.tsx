@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import { GeneratePage } from "@/pages/GeneratePage";
+import { PersonalizationPage } from "@/pages/PersonalizationPage";
 import { PostDetailPage } from "@/pages/PostDetailPage";
 import { PostsPage } from "@/pages/PostsPage";
 import { RunDetailPage } from "@/pages/RunDetailPage";
@@ -20,6 +21,7 @@ export function App() {
         <Route path="/topics" element={<TopicsPage />} />
         <Route path="/seed" element={<SeedPage />} />
         <Route path="/generate" element={<GeneratePage />} />
+        <Route path="/personalization" element={<PersonalizationPage />} />
       </Route>
     </Routes>
   );

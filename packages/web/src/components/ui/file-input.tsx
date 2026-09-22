@@ -43,12 +43,12 @@ const FileInput = React.forwardRef<HTMLInputElement, FileInputProps>(
             ref={inputRef}
             type="file"
             className="sr-only"
+            {...props}
             onChange={(e) => {
               const file = e.target.files?.[0]
               setFileName(file?.name ?? null)
               props.onChange?.(e)
             }}
-            {...props}
           />
         </label>
       </div>

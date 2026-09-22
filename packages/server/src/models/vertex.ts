@@ -50,10 +50,11 @@ export class VertexModel implements ContentModel {
       user: args.user,
       temperature: args.temperature ?? 0.8,
       maxTokens: args.maxTokens ?? env.LLM_MAX_TOKENS,
-      // GLM's thinking mode burns most of the token budget on reasoning
-      // (8-11k tokens, 78-105s/post observed) for a voice/style task that
-      // doesn't benefit from it — disabled outright, not just tuned down.
-      extraBody: { thinking: { type: "disabled" } },
+      // Thinking left on (the model's default) — disabling it saved tokens
+      // and latency, but posts came back too long and off-voice, so the
+      // reasoning pass earns its cost here. LLM_MAX_TOKENS has to stay
+      // generous (thinking alone has been observed to burn 8-13k tokens on
+      // a long post before it writes a word of the actual answer).
     });
   }
 }

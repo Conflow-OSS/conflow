@@ -2,7 +2,7 @@ import { loadEnv } from "../config/load.js";
 import type { ContentModel } from "../models/types.js";
 import { assemblePrompt, type PostRequest } from "../prompt/assemble.js";
 import { charCount } from "../store/posts.js";
-import type { PostFormat, PostStatus } from "../store/types.js";
+import type { GoldenPostRow, PostFormat, PostStatus } from "../store/types.js";
 import { parsePostXml, type ParsedPost } from "./parse.js";
 
 const CHARACTER_BAND_BY_FORMAT: Record<PostFormat, { min: number; max: number }> = {
@@ -21,9 +21,10 @@ export interface GeneratedPost {
 export async function generatePost(
   request: PostRequest,
   model: ContentModel,
+  goldenPosts: GoldenPostRow[],
 ): Promise<GeneratedPost> {
   const env = loadEnv();
-  const { system, user } = assemblePrompt(request);
+  const { system, user } = assemblePrompt(request, goldenPosts);
 
   const temperature =
     request.mode === "regenerate" ? env.REGENERATE_TEMPERATURE : env.LLM_TEMPERATURE;

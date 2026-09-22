@@ -30,13 +30,14 @@ export const topicListQuery = z.object({
 export const postFilterQuery = z.object({
   status: z.enum(["ok", "flagged", "all"]).default("all"),
   approval: z.enum(["pending", "approved", "rejected"]).optional(),
-  // "all" still excludes superseded/rejected posts unless these are set —
-  // both are dead weight for routine review, not something a reviewer
-  // normally wants mixed into an unfiltered view. Explicitly asking for
-  // approval=rejected still works regardless of includeRejected — an
+  // "all" still excludes superseded/rejected/published posts unless these
+  // are set — all three are dead weight for routine review, not something a
+  // reviewer normally wants mixed into an unfiltered view. Explicitly asking
+  // for approval=rejected still works regardless of includeRejected — an
   // explicit filter always wins over the default-hide behavior.
   includeSuperseded: z.coerce.boolean().default(false),
   includeRejected: z.coerce.boolean().default(false),
+  includePublished: z.coerce.boolean().default(false),
 });
 
 export const postListQuery = z.object({
@@ -47,6 +48,7 @@ export const postListQuery = z.object({
   approval: z.enum(["pending", "approved", "rejected"]).optional(),
   includeSuperseded: z.coerce.boolean().default(false),
   includeRejected: z.coerce.boolean().default(false),
+  includePublished: z.coerce.boolean().default(false),
 });
 
 export const exportQuery = z.object({
@@ -106,4 +108,46 @@ export const addSeedPostBody = z.object({
 export const seedPostListQuery = z.object({
   limit: z.coerce.number().int().positive().max(200).default(50),
   offset: z.coerce.number().int().nonnegative().default(0),
+});
+
+export const createGoldenPostBody = z
+  .object({
+    title: z.string().min(1).max(80),
+    body: z.string().min(1),
+    format: z.enum(["short", "long"]),
+    hookStyle: z.enum(["questions", "callout"]).optional(),
+    designTemplateId: z.string().min(1).optional(),
+    idealLengthMin: z.coerce.number().int().positive(),
+    idealLengthMax: z.coerce.number().int().positive(),
+  })
+  .refine((body) => body.idealLengthMin <= body.idealLengthMax, {
+    message: "idealLengthMin must be less than or equal to idealLengthMax",
+  });
+
+export const updateGoldenPostBody = z
+  .object({
+    title: z.string().min(1).max(80).optional(),
+    body: z.string().min(1).optional(),
+    format: z.enum(["short", "long"]).optional(),
+    hookStyle: z.enum(["questions", "callout"]).nullable().optional(),
+    designTemplateId: z.string().min(1).nullable().optional(),
+    idealLengthMin: z.coerce.number().int().positive().optional(),
+    idealLengthMax: z.coerce.number().int().positive().optional(),
+  })
+  .refine(
+    (body) =>
+      body.idealLengthMin === undefined ||
+      body.idealLengthMax === undefined ||
+      body.idealLengthMin <= body.idealLengthMax,
+    { message: "idealLengthMin must be less than or equal to idealLengthMax" },
+  );
+
+export const createDesignTemplateBody = z.object({
+  name: z.string().min(1).max(60),
+  imejisDesignId: z.string().min(1),
+});
+
+export const updateDesignTemplateBody = z.object({
+  name: z.string().min(1).max(60).optional(),
+  imejisDesignId: z.string().min(1).optional(),
 });

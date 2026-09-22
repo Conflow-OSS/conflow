@@ -27,5 +27,5 @@ export function useTestDatabase(): void {
 /** Wipe every row so this file starts from the same clean slate a fresh SQLite file used to give it. */
 export async function resetTestTables(): Promise<void> {
   const { getDb } = await import("../../src/store/db.js");
-  await getDb()`TRUNCATE posts, topics, runs CASCADE`;
+  await getDb()`TRUNCATE posts, topics, runs, golden_posts, design_templates CASCADE`;
 }

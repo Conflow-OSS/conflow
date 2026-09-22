@@ -37,6 +37,26 @@ export async function migrate(): Promise<void> {
       progress_json TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS design_templates (
+      id                 TEXT PRIMARY KEY,
+      name               TEXT NOT NULL,
+      imejis_design_id   TEXT NOT NULL,
+      preview_image_url  TEXT NOT NULL,
+      preview_image_key  TEXT NOT NULL,
+      created_at         TEXT NOT NULL,
+      updated_at         TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS golden_posts (
+      id                  TEXT PRIMARY KEY,
+      body                TEXT NOT NULL,
+      format              TEXT NOT NULL,
+      hook_style          TEXT,
+      design_template_id  TEXT REFERENCES design_templates(id) ON DELETE SET NULL,
+      created_at          TEXT NOT NULL,
+      updated_at          TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS topics (
       id          TEXT PRIMARY KEY,
       run_id      TEXT NOT NULL REFERENCES runs(id),
@@ -90,6 +110,10 @@ export async function migrate(): Promise<void> {
     -- actually reach them.
     ALTER TABLE posts ADD COLUMN IF NOT EXISTS published_at TEXT;
     ALTER TABLE posts ADD COLUMN IF NOT EXISTS superseded_by_id TEXT REFERENCES posts(id);
+    ALTER TABLE posts ADD COLUMN IF NOT EXISTS golden_post_id TEXT REFERENCES golden_posts(id) ON DELETE SET NULL;
+    ALTER TABLE golden_posts ADD COLUMN IF NOT EXISTS title TEXT;
+    ALTER TABLE golden_posts ADD COLUMN IF NOT EXISTS ideal_length_min INTEGER;
+    ALTER TABLE golden_posts ADD COLUMN IF NOT EXISTS ideal_length_max INTEGER;
   `);
 
   const [row] = await sql<{ value: string }[]>`SELECT value FROM meta WHERE key = 'embed_dim'`;

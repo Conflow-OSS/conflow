@@ -12,10 +12,8 @@ export const postsRouter = Router();
 
 /** Every generated post across every run — never seed posts (see `/seed-posts` for those). */
 postsRouter.get("/posts", async (req, res) => {
-  const { limit, offset, run_id, status, approval, includeSuperseded, includeRejected } = parseOrThrow(
-    postListQuery,
-    req.query,
-  );
+  const { limit, offset, run_id, status, approval, includeSuperseded, includeRejected, includePublished } =
+    parseOrThrow(postListQuery, req.query);
   const { posts, total } = await listPosts({
     limit,
     offset,
@@ -24,6 +22,7 @@ postsRouter.get("/posts", async (req, res) => {
     approval,
     includeSuperseded,
     includeRejected,
+    includePublished,
   });
   res.json({ posts, total, limit, offset });
 });
