@@ -1,4 +1,4 @@
-# content-engine
+# Conflow
 
 A local, human-in-the-loop LinkedIn content engine: generate a matrix of
 drafts in one voice, guard against repetition, review and approve them, then
