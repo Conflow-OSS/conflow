@@ -12,6 +12,8 @@
     "typecheck": "tsc -p tsconfig.check.json",
     "dev": "tsx src/cli.ts",
     "content": "tsx src/cli.ts",
+    "migrate": "node dist/cli.js migrate",
+    "migrate:dev": "tsx src/cli.ts migrate",
     "api": "node dist/api/server.js",
     "api:dev": "tsx watch src/api/server.ts",
     "worker": "node dist/worker/index.js",

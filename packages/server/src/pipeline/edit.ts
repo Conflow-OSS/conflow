@@ -3,7 +3,6 @@ import type { ImageStore } from "../cards/image-store.js";
 import { deleteCardIfOrphaned } from "../cards/run.js";
 import { loadEnv } from "../config/load.js";
 import { embedDocuments } from "../embeddings/voyage.js";
-import { migrate } from "../store/migrate.js";
 import { editPostContent, getPost, standingVariantsOfTopic } from "../store/posts.js";
 import type { PostRow, PostStatus } from "../store/types.js";
 import { nearestLedgerMatch, upsertEmbedding } from "../store/vec.js";
@@ -29,7 +28,6 @@ export async function editPost(
   input: EditPostInput,
   imageStore: ImageStore = getImageStore(),
 ): Promise<PostRow> {
-  await migrate();
   const env = loadEnv();
 
   const post = await getPost(postId);

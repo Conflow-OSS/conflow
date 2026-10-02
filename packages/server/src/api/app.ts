@@ -1,7 +1,6 @@
 import cors from "cors";
 import express, { type Express, Router } from "express";
 import { loadEnv, requireApiToken } from "../config/load.js";
-import { migrate } from "../store/migrate.js";
 import { logger } from "../util/logger.js";
 import { bearerAuth } from "./auth.js";
 import { errorMiddleware, notFoundHandler } from "./error-middleware.js";
@@ -20,7 +19,6 @@ import { topicsRouter } from "./routes/topics.js";
 export async function createApp(): Promise<Express> {
   const env = loadEnv();
   const token = requireApiToken(env);
-  await migrate();
 
   const app = express();
   app.use(express.json({ limit: "4mb" }));

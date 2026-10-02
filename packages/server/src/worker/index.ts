@@ -2,12 +2,10 @@ import { type Job, Worker } from "bullmq";
 import { loadEnv } from "../config/load.js";
 import { getRedisConnection, QUEUE_NAME } from "../queue/queue.js";
 import { closeDb } from "../store/db.js";
-import { migrate } from "../store/migrate.js";
 import { logger } from "../util/logger.js";
 import { handleJob } from "./handlers.js";
 
 const env = loadEnv();
-await migrate();
 
 // No boot-time "fail anything stuck at running" sweep here on purpose — with
 // more than one worker replica, a fresh replica's sweep can't tell "abandoned
