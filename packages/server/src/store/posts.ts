@@ -129,6 +129,21 @@ export async function getPost(id: string): Promise<PostRow | undefined> {
 }
 
 /**
+ * Every post already stored for one topic (angle), any status. Used to
+ * resume a generation run: which variant_index slots are already filled
+ * (don't regenerate them) and what their embeddings are (so a newly
+ * generated sibling still dedup-checks against ones made in an earlier,
+ * interrupted attempt, not just the ones made in this call).
+ */
+export async function listPostsByTopic(topicId: string): Promise<PostRow[]> {
+  const sql = getDb();
+  return sql.unsafe<PostRow[]>(
+    `SELECT ${COLUMNS} FROM posts WHERE topic_id = $1 ORDER BY variant_index`,
+    [topicId],
+  );
+}
+
+/**
  * A run's posts, interleaved across *base* topics — not across `topic_id`,
  * which is really a (base topic, angle) pair here (one `topics` row per
  * angle). Partitioning by topic_id alone only spread angles of the same

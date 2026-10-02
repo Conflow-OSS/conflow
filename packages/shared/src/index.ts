@@ -55,6 +55,7 @@ export interface RunRow {
   job_id: string | null;
   error: string | null;
   progress_json: string | null;
+  slots_json: string | null;
 }
 
 export interface TopicRow {
@@ -64,6 +65,7 @@ export interface TopicRow {
   base_index: number;
   angle_text: string;
   angle_index: number;
+  lessons_json: string | null;
 }
 
 export interface PostRow {

@@ -10,13 +10,61 @@ export interface NewTopic {
   angle_index: number;
 }
 
-const COLUMN_NAMES = ["id", "run_id", "base_text", "base_index", "angle_text", "angle_index"] as const;
+const COLUMN_NAMES = [
+  "id",
+  "run_id",
+  "base_text",
+  "base_index",
+  "angle_text",
+  "angle_index",
+  "lessons_json",
+] as const;
 
+/**
+ * (run_id, base_index, angle_index) is unique in the schema. If a job for
+ * this run got redelivered and is racing an earlier attempt that's still
+ * running, both might try to insert the same angle's topic row — the second
+ * one just gets back the row the first one already wrote, instead of erroring
+ * or creating a duplicate.
+ */
 export async function insertTopic(t: NewTopic): Promise<TopicRow> {
-  const row: TopicRow = { id: newId(), ...t };
+  const row: TopicRow = { ...t, id: newId(), lessons_json: null };
   const sql = getDb();
-  await sql`INSERT INTO topics ${sql(row, ...COLUMN_NAMES)}`;
+  const [inserted] = await sql<TopicRow[]>`
+    INSERT INTO topics ${sql(row, ...COLUMN_NAMES)}
+    ON CONFLICT (run_id, base_index, angle_index) DO NOTHING
+    RETURNING *
+  `;
+  if (inserted) return inserted;
+
+  const existing = await getTopicByRunBaseAngle(t.run_id, t.base_index, t.angle_index);
+  if (!existing) {
+    throw new Error(
+      `topic insert for run ${t.run_id} base ${t.base_index} angle ${t.angle_index} conflicted, ` +
+        `but no existing row was found — this shouldn't happen`,
+    );
+  }
+  return existing;
+}
+
+export async function getTopicByRunBaseAngle(
+  runId: string,
+  baseIndex: number,
+  angleIndex: number,
+): Promise<TopicRow | undefined> {
+  const sql = getDb();
+  const [row] = await sql<TopicRow[]>`
+    SELECT * FROM topics WHERE run_id = ${runId} AND base_index = ${baseIndex} AND angle_index = ${angleIndex}
+  `;
   return row;
+}
+
+/** Persisted the moment lessons are decided for an angle, before any post is
+ *  generated from them — so a resumed run reuses the same lessons instead of
+ *  asking the model again and possibly getting a different answer. */
+export async function setTopicLessons(id: string, lessonsJson: string): Promise<void> {
+  const sql = getDb();
+  await sql`UPDATE topics SET lessons_json = ${lessonsJson} WHERE id = ${id}`;
 }
 
 export async function listTopicsByRun(runId: string): Promise<TopicRow[]> {
