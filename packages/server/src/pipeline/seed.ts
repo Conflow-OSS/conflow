@@ -3,7 +3,6 @@ import { basename, extname, join } from "node:path";
 import { loadEnv, requireVoyage } from "../config/load.js";
 import { embedDocuments } from "../embeddings/voyage.js";
 import { getDb } from "../store/db.js";
-import { migrate } from "../store/migrate.js";
 import { charCount, insertPost } from "../store/posts.js";
 import type { PostRow } from "../store/types.js";
 import { upsertEmbedding } from "../store/vec.js";
@@ -55,7 +54,6 @@ export async function seedCorpus(dir: string): Promise<SeedResult> {
 export async function seedDocuments(docs: SeedDoc[]): Promise<SeedResult> {
   const env = loadEnv();
   requireVoyage(env);
-  await migrate();
 
   if (docs.length === 0) {
     logger.warn("no seed documents given");
@@ -104,7 +102,6 @@ export async function seedDocuments(docs: SeedDoc[]): Promise<SeedResult> {
 export async function addSeedPost(body: string): Promise<PostRow> {
   const env = loadEnv();
   requireVoyage(env);
-  await migrate();
 
   const [vector] = await embedDocuments([body]);
   const format = charCount(body) <= SHORT_MAX ? "short" : "long";

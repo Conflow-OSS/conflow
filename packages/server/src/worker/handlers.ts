@@ -5,7 +5,6 @@ import { getModel } from "../models/factory.js";
 import { regeneratePost } from "../pipeline/regenerate.js";
 import { runGenerationForRun } from "../pipeline/run.js";
 import { seedDocuments } from "../pipeline/seed.js";
-import { migrate } from "../store/migrate.js";
 import { getRun, setRunStatus } from "../store/runs.js";
 import { NotFoundError } from "../util/errors.js";
 import { logger } from "../util/logger.js";
@@ -34,7 +33,6 @@ export async function handleJob(job: JobLike): Promise<unknown> {
 }
 
 async function handleGenerate(job: JobLike): Promise<unknown> {
-  await migrate();
   const { runId } = job.data as { runId: string };
 
   const run = await getRun(runId);
@@ -55,13 +53,11 @@ async function handleGenerate(job: JobLike): Promise<unknown> {
 }
 
 async function handleRegenerate(job: JobLike): Promise<unknown> {
-  await migrate();
   const { postId } = job.data as { postId: string };
   return regeneratePost(postId, getModel());
 }
 
 async function handleCards(job: JobLike): Promise<unknown> {
-  await migrate();
   const { runId, limit } = job.data as { runId: string; limit?: number };
   return generateCardsForRun({
     runId,
@@ -72,7 +68,6 @@ async function handleCards(job: JobLike): Promise<unknown> {
 }
 
 async function handleSeed(job: JobLike): Promise<unknown> {
-  await migrate();
   const { posts } = job.data as { posts: Array<{ name: string; body: string }> };
   return seedDocuments(posts.map((post) => ({ file: post.name, body: post.body })));
 }

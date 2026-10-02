@@ -1,6 +1,5 @@
 import { join } from "node:path";
 import { loadEnv } from "../config/load.js";
-import { migrate } from "../store/migrate.js";
 import { listByRun } from "../store/posts.js";
 import { getRun } from "../store/runs.js";
 import { listTopicsByRun } from "../store/topics.js";
@@ -17,8 +16,6 @@ export interface ExportResult {
 
 /** Write a run's posts to `<EXPORT_DIR>/<run_id>/`. Works on partial runs too. */
 export async function exportRun(runId: string, format: ExportFormat): Promise<ExportResult> {
-  await migrate();
-
   const run = await getRun(runId);
   if (!run) {
     throw new Error(`no run with id ${runId}`);
@@ -44,8 +41,6 @@ export interface RunExportPayload {
 
 /** A run's export as an in-memory payload — the API returns this instead of writing files. */
 export async function buildRunExport(runId: string, format: ExportFormat): Promise<RunExportPayload> {
-  await migrate();
-
   const run = await getRun(runId);
   if (!run) {
     throw new NotFoundError(`no run with id ${runId}`);

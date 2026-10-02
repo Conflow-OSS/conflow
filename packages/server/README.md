@@ -39,7 +39,7 @@ cp .env.example .env
 #    - MODEL_CHANNEL=vertex  -> `gcloud auth application-default login`, set VERTEX_PROJECT
 #    - MODEL_CHANNEL=zai     -> set ZAI_API_KEY
 npm test                                  # needs postgres (content_engine_test) — see below
-npm run dev -- migrate                    # create the schema in content_engine
+npm run dev -- migrate                    # create the schema in content_engine — required, nothing else runs this for you
 
 # 2. seed the voice reference (your own hand-written posts, one per file)
 npm run dev -- seed ./seed/posts
@@ -95,7 +95,7 @@ npm run build && npm link       # once → then `content <cmd>` anywhere
 (`npx content` fetches an unrelated package from the registry — don't use it.)
 
 ```
-content migrate                                   create / update the schema
+content migrate                                   create / update the schema (run once, before anything else touches a fresh or upgraded DB)
 content seed <dir>                                embed hand-written posts
 content test-model [--prompt <t>] [--system <f>]  one call to the configured channel
 content generate --flow matrix --topics-file f    matrix flow from a topic list
@@ -270,13 +270,23 @@ Postgres + [pgvector](https://github.com/pgvector/pgvector) — `docker-compose.
 `postgres` service (`pgvector/pgvector:pg16`) creates both `content_engine`
 (the app) and `content_engine_test` (the test suite) the first time it starts
 on a fresh volume. `migrate()` is still hand-rolled, idempotent
-`CREATE ... IF NOT EXISTS` DDL run on every boot (API, worker, and CLI
-`migrate` all call it) — no separate migration tool. The embedding lives as a
-real `vector(EMBED_DIM)` column directly on `posts` (no sidecar table the way
-SQLite's `vec0` virtual table needed one).
+`CREATE ... IF NOT EXISTS` DDL — no separate migration tool — but it is
+**not** called automatically by the API, worker, or any pipeline/CLI command
+anymore. Run it explicitly, once, before starting or deploying a new version:
+`npm run migrate` (or `content migrate` / `npm run dev -- migrate` locally;
+`docker compose up` runs it via the one-shot `migrate` service, which `api`
+and `worker` wait on). This used to run per-request inside every pipeline
+function and every worker job — harmless with one process, but concurrent
+job starts (e.g. `WORKER_CONCURRENCY > 1`, or multiple replicas) raced the
+same `ALTER TABLE` statements and could deadlock in Postgres, since even a
+no-op `ADD COLUMN IF NOT EXISTS` still takes an `AccessExclusiveLock`. The
+embedding lives as a real `vector(EMBED_DIM)` column directly on `posts` (no
+sidecar table the way SQLite's `vec0` virtual table needed one).
 
-`npm test` needs `docker compose up -d postgres` — every test file shares the
-one `content_engine_test` database (vitest runs test files sequentially, so
+`npm test` needs `docker compose up -d postgres` — a Vitest `globalSetup`
+(`test/support/global-setup.ts`) migrates `content_engine_test` once before
+any test file runs, independent of the app's own migrate step above. Every
+test file shares that one database (vitest runs test files sequentially, so
 this is safe) and clears its own tables on start.
 
 ## Out of Phase 1

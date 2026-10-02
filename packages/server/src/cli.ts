@@ -34,7 +34,10 @@ program
 
 program
   .command("migrate")
-  .description("Create or update the Postgres schema")
+  .description(
+    "Create or update the Postgres schema — run this once before starting/deploying " +
+      "a new api, worker, or CLI process; nothing else in this codebase runs it for you",
+  )
   .action(async () => {
     await migrate();
   });
@@ -95,7 +98,6 @@ program
   .option("--run <id>", "limit to one run")
   .description("List flagged posts")
   .action(async (opts: { run?: string }) => {
-    await migrate();
     const rows = await listFlagged(opts.run);
     if (rows.length === 0) {
       logger.info("no flagged posts");
@@ -115,7 +117,6 @@ program
   .argument("[run_id]", "which run to show (default: the most recent)")
   .description("Print every post from a run")
   .action(async (runId?: string) => {
-    await migrate();
     const run = runId ? await getRun(runId) : await latestRun();
     if (!run) {
       logger.error(runId ? `no run with id ${runId}` : "no runs yet");
@@ -172,7 +173,6 @@ program
   .action(async (postId: string) => {
     const { publishPost } = await import("./store/posts.js");
     try {
-      await migrate();
       await publishPost(postId);
       process.stdout.write(`${postId} → published\n`);
     } catch (error) {
@@ -187,7 +187,6 @@ program
   .option("--include-flagged", "also approve posts flagged for dup or length")
   .description("Approve every pending post in a run")
   .action(async (runId: string, opts: { includeFlagged?: boolean }) => {
-    await migrate();
     const count = await approvePendingInRun(runId, opts.includeFlagged === true);
     process.stdout.write(`approved ${count} post(s)\n`);
   });
@@ -195,7 +194,6 @@ program
 async function setPostApprovalFromCli(postId: string, approval: Approval): Promise<void> {
   const { changePostApproval } = await import("./store/posts.js");
   try {
-    await migrate();
     const { warning } = await changePostApproval(postId, approval);
     if (warning) logger.warn(`post ${postId}: ${warning}`);
     process.stdout.write(`${postId} → ${approval}\n`);
@@ -291,7 +289,6 @@ program
       lengthMin: number;
       lengthMax: number;
     }) => {
-      await migrate();
       try {
         const goldenPost = await insertGoldenPost({
           title: opts.title,
@@ -334,7 +331,6 @@ program
         lengthMax?: number;
       },
     ) => {
-      await migrate();
       try {
         const goldenPost = await updateGoldenPost(id, {
           title: opts.title,
@@ -358,7 +354,6 @@ program
   .argument("<id>")
   .description("Print one golden post")
   .action(async (id: string) => {
-    await migrate();
     const goldenPost = await getGoldenPost(id);
     if (!goldenPost) {
       logger.error(`no golden post with id ${id}`);
@@ -375,7 +370,6 @@ program
   .command("golden-list")
   .description("List every golden post")
   .action(async () => {
-    await migrate();
     const goldenPosts = await listGoldenPosts();
     if (goldenPosts.length === 0) {
       logger.info("no golden posts yet — add one with golden-add");
@@ -395,7 +389,6 @@ program
   .argument("<id>")
   .description("Delete a golden post")
   .action(async (id: string) => {
-    await migrate();
     try {
       await deleteGoldenPost(id);
       process.stdout.write(`${id} deleted\n`);
@@ -412,7 +405,6 @@ program
   .requiredOption("--image-file <path>", "a preview image (png/jpeg/webp) for the picker UI")
   .description("Add a design template")
   .action(async (opts: { name: string; imejisId: string; imageFile: string }) => {
-    await migrate();
     try {
       const { createDesignTemplate } = await import("./design-templates/manage.js");
       const designTemplate = await createDesignTemplate({
@@ -436,7 +428,6 @@ program
   .option("--image-file <path>", "a replacement preview image (png/jpeg/webp)")
   .description("Update a design template")
   .action(async (id: string, opts: { name?: string; imejisId?: string; imageFile?: string }) => {
-    await migrate();
     try {
       const { editDesignTemplate } = await import("./design-templates/manage.js");
       const designTemplate = await editDesignTemplate(id, {
@@ -458,7 +449,6 @@ program
   .argument("<id>")
   .description("Print one design template")
   .action(async (id: string) => {
-    await migrate();
     const { getDesignTemplate } = await import("./store/design-templates.js");
     const designTemplate = await getDesignTemplate(id);
     if (!designTemplate) {
@@ -476,7 +466,6 @@ program
   .command("design-list")
   .description("List every design template")
   .action(async () => {
-    await migrate();
     const { listDesignTemplates } = await import("./store/design-templates.js");
     const designTemplates = await listDesignTemplates();
     if (designTemplates.length === 0) {
@@ -495,7 +484,6 @@ program
   .argument("<id>")
   .description("Delete a design template")
   .action(async (id: string) => {
-    await migrate();
     try {
       const { removeDesignTemplate } = await import("./design-templates/manage.js");
       const { detachedGoldenPosts } = await removeDesignTemplate(id);
@@ -521,7 +509,6 @@ program
   .command("stats")
   .description("Quick database overview")
   .action(async () => {
-    await migrate();
     const run = await latestRun();
     process.stdout.write(`vectors stored: ${await countEmbeddings()}\n`);
     if (run) {

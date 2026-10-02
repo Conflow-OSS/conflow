@@ -2,7 +2,6 @@ import { loadEnv } from "../config/load.js";
 import { embedDocuments } from "../embeddings/voyage.js";
 import type { ContentModel } from "../models/types.js";
 import { listGoldenPosts } from "../store/golden-posts.js";
-import { migrate } from "../store/migrate.js";
 import { getPost, insertPost, setStatus, standingVariantsOfTopic } from "../store/posts.js";
 import { getRun } from "../store/runs.js";
 import { getTopic } from "../store/topics.js";
@@ -27,7 +26,6 @@ export async function regeneratePost(
   postId: string,
   model: ContentModel,
 ): Promise<RegenerateResult> {
-  await migrate();
   const env = loadEnv();
 
   const oldPost = await getPost(postId);

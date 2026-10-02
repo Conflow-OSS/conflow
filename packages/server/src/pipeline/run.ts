@@ -3,7 +3,6 @@ import { loadEnv } from "../config/load.js";
 import { embedDocuments } from "../embeddings/voyage.js";
 import type { ContentModel } from "../models/types.js";
 import { listGoldenPosts } from "../store/golden-posts.js";
-import { migrate } from "../store/migrate.js";
 import { insertPost } from "../store/posts.js";
 import { insertRun, setRunProgress, setRunStatus } from "../store/runs.js";
 import { insertTopic } from "../store/topics.js";
@@ -73,7 +72,6 @@ export async function runMatrixFlowFromTopicList(
   topicListPath: string,
   model: ContentModel,
 ): Promise<MatrixRunResult> {
-  await migrate();
   const baseTopics = loadTopicList(topicListPath);
   const run = await insertRun({
     flow: "matrix",
@@ -88,7 +86,6 @@ export async function runMatrixFlowFromStory(
   storyPath: string,
   model: ContentModel,
 ): Promise<MatrixRunResult> {
-  await migrate();
   const story = readFileSync(storyPath, "utf8").trim();
   if (story.length === 0) {
     throw new Error(`story file is empty: ${storyPath}`);
@@ -111,7 +108,6 @@ export async function runCaseStudyFlow(
   caseStudyPath: string,
   model: ContentModel,
 ): Promise<MatrixRunResult> {
-  await migrate();
   const caseStudy = readFileSync(caseStudyPath, "utf8").trim();
   if (caseStudy.length === 0) {
     throw new Error(`case study file is empty: ${caseStudyPath}`);
@@ -135,7 +131,6 @@ export async function runGenerationForRun(
   model: ContentModel,
   onProgress?: ProgressReporter,
 ): Promise<MatrixRunResult> {
-  await migrate();
   const config = parseRunConfig(run.config_json);
 
   const report: ProgressReporter = async (progress) => {

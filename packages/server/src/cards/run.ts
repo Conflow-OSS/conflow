@@ -3,7 +3,6 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { loadEnv } from "../config/load.js";
 import { getDesignTemplate } from "../store/design-templates.js";
 import { getGoldenPost } from "../store/golden-posts.js";
-import { migrate } from "../store/migrate.js";
 import {
   getPost,
   imageKeyInUseElsewhere,
@@ -47,7 +46,6 @@ export async function generateCardsForRun(input: {
   renderer: CardRenderer;
   store: ImageStore;
 }): Promise<CardBatchResult> {
-  await migrate();
   const renderDelayMs = loadEnv().CARD_RENDER_DELAY_MS;
 
   const posts = await postsNeedingCards(input.runId, input.limit);
@@ -81,8 +79,6 @@ export async function generateOneCard(input: {
   renderer: CardRenderer;
   store: ImageStore;
 }): Promise<{ url: string }> {
-  await migrate();
-
   const post = await getPost(input.postId);
   if (!post) throw new NotFoundError(`no post with id ${input.postId}`);
   if (post.status === "regenerated") {
