@@ -2,18 +2,32 @@ import { readFileSync } from "node:fs";
 import { loadEnv } from "../config/load.js";
 import { embedDocuments } from "../embeddings/voyage.js";
 import type { ContentModel } from "../models/types.js";
+import { getDb } from "../store/db.js";
 import { listGoldenPosts } from "../store/golden-posts.js";
-import { insertPost } from "../store/posts.js";
-import { insertRun, setRunProgress, setRunStatus } from "../store/runs.js";
-import { insertTopic } from "../store/topics.js";
-import type { GoldenPostRow, RunRow } from "../store/types.js";
+import { countByStatus, insertPost, listPostsByTopic } from "../store/posts.js";
+import { insertRun, setRunProgress, setRunSlots, setRunStatus } from "../store/runs.js";
+import { insertTopic, listTopicsByRun, setTopicLessons } from "../store/topics.js";
+import type { GoldenPostRow, RunRow, TopicRow } from "../store/types.js";
 import { nearestLedgerMatch, upsertEmbedding } from "../store/vec.js";
 import { logger } from "../util/logger.js";
-import { type EmbeddedPost, findDuplicate } from "./dedup.js";
+import { type EmbeddedPost, findDuplicate, loadEmbeddingsForPosts } from "./dedup.js";
 import { expandAngleIntoLessons, expandStoryIntoTopics, expandTopicIntoAngles } from "./expand.js";
 import { type GeneratedPost, generatePost } from "./generate.js";
 import { loadTopicList, parseTopicList } from "./inputs.js";
 import { type PostSlot, planPostSlots } from "./plan.js";
+
+/** Rebuilt from the DB rather than accumulated in memory, so it's correct
+ *  whether this is a run's first attempt or a resumed one. */
+async function summarizeRun(runId: string): Promise<MatrixRunResult> {
+  const counts = await countByStatus(runId);
+  const postsCreated = Object.values(counts).reduce((sum, n) => sum + n, 0);
+  return {
+    runId,
+    postsCreated,
+    flaggedForLength: counts.flag_length ?? 0,
+    flaggedAsDuplicate: counts.flag_dup ?? 0,
+  };
+}
 
 export interface MatrixRunResult {
   runId: string;
@@ -125,8 +139,60 @@ export async function runCaseStudyFlow(
  * Execute a generation run whose row already exists. Both the CLI (right after
  * creating the row) and the queue worker (picking up a queued row) call this.
  * Moves the run through running → completed / failed and reports progress.
+ *
+ * Safe to call more than once for the same run — a redelivered queue job (a
+ * stalled lock, a Spot interruption) lands here too. Two guards make that
+ * safe instead of wasteful:
+ *   - if the run already reached "completed", this is a no-op — deliberately
+ *     NOT true for "failed" too: a run can fail for a transient reason (a
+ *     network blip that exhausted its retries, say), and failed runs aren't
+ *     just inert history — see runs.ts's RunStatus / the CLI's lack of any
+ *     "retry" command for why nothing currently re-invokes this on a failed
+ *     run automatically, but if anything ever does (a future retry action, a
+ *     human re-enqueueing it by hand), it must actually resume, not silently
+ *     no-op forever.
+ *   - a Postgres advisory lock keyed on the run id makes sure only one
+ *     attempt is actually doing work at a time; a second attempt that
+ *     arrives while the first is still running backs off immediately rather
+ *     than racing it.
+ * Within a single, lock-holding attempt, runMatrixLoop/generateAndPersistLessons
+ * also resume from whatever's already in the DB (existing topics, lessons,
+ * posts) rather than redoing it — see their own comments.
  */
 export async function runGenerationForRun(
+  run: RunRow,
+  model: ContentModel,
+  onProgress?: ProgressReporter,
+): Promise<MatrixRunResult> {
+  if (run.status === "completed") {
+    logger.info("run already finished — a redelivered job has nothing to do", {
+      runId: run.id,
+      status: run.status,
+    });
+    return summarizeRun(run.id);
+  }
+
+  const reserved = await getDb().reserve();
+  try {
+    const [{ locked }] = await reserved<[{ locked: boolean }]>`
+      SELECT pg_try_advisory_lock(hashtext(${run.id})::bigint) AS locked
+    `;
+    if (!locked) {
+      logger.warn("another attempt is already working this run — stepping aside", { runId: run.id });
+      return summarizeRun(run.id);
+    }
+
+    try {
+      return await runGenerationLocked(run, model, onProgress);
+    } finally {
+      await reserved`SELECT pg_advisory_unlock(hashtext(${run.id})::bigint)`;
+    }
+  } finally {
+    reserved.release();
+  }
+}
+
+async function runGenerationLocked(
   run: RunRow,
   model: ContentModel,
   onProgress?: ProgressReporter,
@@ -153,7 +219,7 @@ export async function runGenerationForRun(
     }
 
     const sourceFacts = run.flow === "casestudy" ? story : undefined;
-    const result = await runMatrixLoop({
+    await runMatrixLoop({
       run,
       baseTopics,
       sourceFacts,
@@ -163,6 +229,7 @@ export async function runGenerationForRun(
       postsPerAngle: config.postsPerAngle,
     });
 
+    const result = await summarizeRun(run.id);
     await setRunStatus(run.id, "completed");
     await report({
       phase: "done",
@@ -181,6 +248,17 @@ export async function runGenerationForRun(
 /**
  * The matrix loop: for each base topic, expand into GEN_Y angles, then generate
  * GEN_Z posts per angle, checking each for near-duplicates before it is stored.
+ *
+ * Resumable: everything it's about to do, it first checks the DB for.
+ *   - the post-slot plan (format/hook/golden per position) is persisted once
+ *     on the run and reused — planPostSlots shuffles randomly, so recomputing
+ *     it on a resumed run would hand an already-generated post a different
+ *     slot than it actually got, and a not-yet-generated one a different one
+ *     than it was always going to get.
+ *   - a base topic that already has topic rows skips re-asking the model for
+ *     angles; it reuses the stored rows instead.
+ *   - generateAndPersistLessons does the same one level deeper, for lessons
+ *     and posts.
  */
 async function runMatrixLoop(input: {
   run: RunRow;
@@ -190,7 +268,7 @@ async function runMatrixLoop(input: {
   report: ProgressReporter;
   anglesPerTopic: number;
   postsPerAngle: number;
-}): Promise<MatrixRunResult> {
+}): Promise<void> {
   const { run, baseTopics, model, sourceFacts, report, anglesPerTopic, postsPerAngle } = input;
 
   const postsExpected = baseTopics.length * anglesPerTopic * postsPerAngle;
@@ -206,39 +284,68 @@ async function runMatrixLoop(input: {
   // Fetched once, up front — fails fast (before any topic-expansion LLM
   // calls) if there's nothing to plan the format/hook/voice mix from.
   const goldenPosts = await listGoldenPosts();
-  const postSlots = planPostSlots(postsExpected, goldenPosts);
+
+  let postSlots: PostSlot[];
+  if (run.slots_json) {
+    postSlots = JSON.parse(run.slots_json) as PostSlot[];
+  } else {
+    postSlots = planPostSlots(postsExpected, goldenPosts);
+    await setRunSlots(run.id, JSON.stringify(postSlots));
+  }
   let nextSlotIndex = 0;
 
-  const totals = { postsCreated: 0, flaggedForLength: 0, flaggedAsDuplicate: 0 };
+  const existingTopics = await listTopicsByRun(run.id);
+  const topicsByBaseIndex = new Map<number, TopicRow[]>();
+  for (const topic of existingTopics) {
+    const forBase = topicsByBaseIndex.get(topic.base_index) ?? [];
+    forBase.push(topic);
+    topicsByBaseIndex.set(topic.base_index, forBase);
+  }
 
   for (let baseIndex = 0; baseIndex < baseTopics.length; baseIndex++) {
     const baseTopic = baseTopics[baseIndex]!;
-    const angles = await expandTopicIntoAngles(baseTopic, anglesPerTopic, model);
-    logger.info("topic expanded", { baseTopic, angles });
+    const existingForBase = (topicsByBaseIndex.get(baseIndex) ?? []).sort(
+      (a, b) => a.angle_index - b.angle_index,
+    );
+
+    let angles: string[];
+    if (existingForBase.length > 0) {
+      angles = existingForBase.map((topic) => topic.angle_text);
+      logger.info("topic's angles already stored — resuming", {
+        runId: run.id,
+        baseTopic,
+        angleCount: angles.length,
+      });
+    } else {
+      angles = await expandTopicIntoAngles(baseTopic, anglesPerTopic, model);
+      logger.info("topic expanded", { baseTopic, angles });
+    }
 
     for (let angleIndex = 0; angleIndex < angles.length; angleIndex++) {
       const angle = angles[angleIndex]!;
-      const topicRow = await insertTopic({
-        run_id: run.id,
-        base_text: baseTopic,
-        base_index: baseIndex,
-        angle_text: angle,
-        angle_index: angleIndex,
-      });
+      const topicRow =
+        existingForBase.find((topic) => topic.angle_index === angleIndex) ??
+        (await insertTopic({
+          run_id: run.id,
+          base_text: baseTopic,
+          base_index: baseIndex,
+          angle_text: angle,
+          angle_index: angleIndex,
+        }));
 
-      const lessons = await expandAngleIntoLessons(
-        baseTopic,
-        angle,
-        postsPerAngle,
-        model,
-        sourceFacts,
-      );
-      logger.info("angle expanded into lessons", { angle, lessons });
+      let lessons: string[];
+      if (topicRow.lessons_json) {
+        lessons = JSON.parse(topicRow.lessons_json) as string[];
+      } else {
+        lessons = await expandAngleIntoLessons(baseTopic, angle, postsPerAngle, model, sourceFacts);
+        await setTopicLessons(topicRow.id, JSON.stringify(lessons));
+        logger.info("angle expanded into lessons", { angle, lessons });
+      }
 
       const slotsForThisAngle = postSlots.slice(nextSlotIndex, nextSlotIndex + postsPerAngle);
       nextSlotIndex += postsPerAngle;
 
-      const angleTotals = await generateAndPersistLessons({
+      await generateAndPersistLessons({
         runId: run.id,
         topicId: topicRow.id,
         baseTopic,
@@ -250,22 +357,37 @@ async function runMatrixLoop(input: {
         goldenPosts,
       });
 
-      totals.postsCreated += angleTotals.created;
-      totals.flaggedForLength += angleTotals.flaggedForLength;
-      totals.flaggedAsDuplicate += angleTotals.flaggedAsDuplicate;
-
+      const progressSoFar = await summarizeRun(run.id);
       await report({
         phase: "generating",
-        postsCreated: totals.postsCreated,
+        postsCreated: progressSoFar.postsCreated,
         postsExpected,
       });
     }
   }
 
-  logger.info("matrix run done", { runId: run.id, ...totals });
-  return { runId: run.id, ...totals };
+  logger.info("matrix run done", { runId: run.id });
 }
 
+/**
+ * Resumable at the post level: a variant_index that already has a stored post
+ * is left alone, so an interrupted-and-retried angle only generates whatever
+ * was actually missing. Known gap, deliberately not closed here: the
+ * run-level advisory lock (runGenerationForRun) is what actually makes this
+ * safe — as long as it's held, there is only ever one execution deciding
+ * which variant_index values are missing. It relies on that lock's session
+ * staying alive for as long as the code believes it holds it; if the
+ * specific DB connection holding the lock were to drop (not the whole worker
+ * process — just that one connection) while this function is mid-flight on a
+ * model call that doesn't touch the DB, Postgres releases the lock
+ * immediately, and a second attempt could start working before the first
+ * notices and stops. There's no DB constraint on (topic_id, variant_index)
+ * as a second line of defense against that narrow case, because posts'
+ * regenerate path legitimately reuses the same pair for a replacement row —
+ * closing it fully means changing regenerate to free the pair before writing
+ * the replacement, not after, which is a separate, riskier change left for
+ * later.
+ */
 async function generateAndPersistLessons(input: {
   runId: string;
   topicId: string;
@@ -276,15 +398,32 @@ async function generateAndPersistLessons(input: {
   sourceFacts?: string;
   model: ContentModel;
   goldenPosts: GoldenPostRow[];
-}): Promise<{ created: number; flaggedForLength: number; flaggedAsDuplicate: number }> {
+}): Promise<void> {
   const env = loadEnv();
 
-  // Phase 1 — one post per lesson. Each post is told the other lessons so it stays on its own.
-  const generatedVariants: Array<{ variant: GeneratedPost; slot: PostSlot; lesson: string }> = [];
-  for (let lessonIndex = 0; lessonIndex < input.lessons.length; lessonIndex++) {
-    const lesson = input.lessons[lessonIndex]!;
-    const slot = input.slots[lessonIndex]!;
-    const otherLessons = input.lessons.filter((_, index) => index !== lessonIndex);
+  const existingPosts = await listPostsByTopic(input.topicId);
+  const existingVariantIndexes = new Set(existingPosts.map((post) => post.variant_index));
+  const missingIndexes = input.lessons
+    .map((_lesson, index) => index)
+    .filter((index) => !existingVariantIndexes.has(index));
+
+  if (missingIndexes.length === 0) {
+    logger.info("angle already fully generated — resuming", {
+      angle: input.angle,
+      topicId: input.topicId,
+    });
+    return;
+  }
+
+  // Phase 1 — one post per missing lesson. Every lesson under this angle is
+  // still passed as context (not just the missing ones), so a post generated
+  // now still stays off a sibling that was written in an earlier attempt.
+  const generatedVariants: Array<{ variant: GeneratedPost; slot: PostSlot; lesson: string; variantIndex: number }> =
+    [];
+  for (const variantIndex of missingIndexes) {
+    const lesson = input.lessons[variantIndex]!;
+    const slot = input.slots[variantIndex]!;
+    const otherLessons = input.lessons.filter((_, index) => index !== variantIndex);
 
     const variant = await generatePost(
       {
@@ -295,7 +434,7 @@ async function generateAndPersistLessons(input: {
         otherLessons,
         format: slot.format,
         hookStyle: slot.hookStyle,
-        variantNumber: lessonIndex + 1,
+        variantNumber: variantIndex + 1,
         variantCount: input.lessons.length,
         summaryMaxChars: env.SUMMARY_MAX_CHARS,
         sourceFacts: input.sourceFacts,
@@ -303,18 +442,20 @@ async function generateAndPersistLessons(input: {
       input.model,
       input.goldenPosts,
     );
-    generatedVariants.push({ variant, slot, lesson });
+    generatedVariants.push({ variant, slot, lesson, variantIndex });
   }
 
-  // Phase 2 — embed them all at once, then dedup-check and store each in order.
+  // Phase 2 — embed the newly generated ones, seed sibling context with
+  // whatever this topic already had stored (from an earlier, interrupted
+  // attempt), then dedup-check and store each new variant in order.
   const embeddings = await embedDocuments(generatedVariants.map((g) => g.variant.parsed.body));
-  const storedSiblingEmbeddings: EmbeddedPost[] = [];
+  const storedSiblingEmbeddings: EmbeddedPost[] = await loadEmbeddingsForPosts(
+    existingPosts.map((post) => post.id),
+  );
 
-  const totals = { created: 0, flaggedForLength: 0, flaggedAsDuplicate: 0 };
-
-  for (let variantIndex = 0; variantIndex < generatedVariants.length; variantIndex++) {
-    const { variant, slot, lesson } = generatedVariants[variantIndex]!;
-    const embedding = embeddings[variantIndex]!;
+  for (let i = 0; i < generatedVariants.length; i++) {
+    const { variant, slot, lesson, variantIndex } = generatedVariants[i]!;
+    const embedding = embeddings[i]!;
 
     let status = variant.status;
     let flagReason = variant.flagReason;
@@ -363,10 +504,6 @@ async function generateAndPersistLessons(input: {
     await upsertEmbedding(post.id, embedding);
     storedSiblingEmbeddings.push({ postId: post.id, embedding });
 
-    totals.created++;
-    if (status === "flag_length") totals.flaggedForLength++;
-    if (status === "flag_dup") totals.flaggedAsDuplicate++;
-
     logger.info("post stored", {
       baseTopic: input.baseTopic,
       angle: input.angle,
@@ -375,6 +512,4 @@ async function generateAndPersistLessons(input: {
       status,
     });
   }
-
-  return totals;
 }

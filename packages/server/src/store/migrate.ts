@@ -34,7 +34,8 @@ export async function migrate(): Promise<void> {
       status        TEXT NOT NULL DEFAULT 'completed',
       job_id        TEXT,
       error         TEXT,
-      progress_json TEXT
+      progress_json TEXT,
+      slots_json    TEXT
     );
 
     CREATE TABLE IF NOT EXISTS design_templates (
@@ -58,13 +59,20 @@ export async function migrate(): Promise<void> {
     );
 
     CREATE TABLE IF NOT EXISTS topics (
-      id          TEXT PRIMARY KEY,
-      run_id      TEXT NOT NULL REFERENCES runs(id),
-      base_text   TEXT NOT NULL,
-      base_index  INTEGER NOT NULL,
-      angle_text  TEXT NOT NULL,
-      angle_index INTEGER NOT NULL
+      id            TEXT PRIMARY KEY,
+      run_id        TEXT NOT NULL REFERENCES runs(id),
+      base_text     TEXT NOT NULL,
+      base_index    INTEGER NOT NULL,
+      angle_text    TEXT NOT NULL,
+      angle_index   INTEGER NOT NULL,
+      lessons_json  TEXT
     );
+
+    -- Lets a resumed run ask "do I already have this angle's topic row?"
+    -- instead of re-asking the model and risking a duplicate if two
+    -- attempts at the same job ever overlap.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_topics_run_base_angle
+      ON topics(run_id, base_index, angle_index);
 
     CREATE TABLE IF NOT EXISTS posts (
       id                 TEXT PRIMARY KEY,
@@ -114,6 +122,11 @@ export async function migrate(): Promise<void> {
     ALTER TABLE golden_posts ADD COLUMN IF NOT EXISTS title TEXT;
     ALTER TABLE golden_posts ADD COLUMN IF NOT EXISTS ideal_length_min INTEGER;
     ALTER TABLE golden_posts ADD COLUMN IF NOT EXISTS ideal_length_max INTEGER;
+
+    -- slots_json / lessons_json were added after these tables already existed
+    -- in real databases — same reason as the ADD COLUMNs above.
+    ALTER TABLE runs ADD COLUMN IF NOT EXISTS slots_json TEXT;
+    ALTER TABLE topics ADD COLUMN IF NOT EXISTS lessons_json TEXT;
   `);
 
   const [row] = await sql<{ value: string }[]>`SELECT value FROM meta WHERE key = 'embed_dim'`;

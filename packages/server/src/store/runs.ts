@@ -21,6 +21,7 @@ const COLUMN_NAMES = [
   "job_id",
   "error",
   "progress_json",
+  "slots_json",
 ] as const;
 
 export async function insertRun(r: NewRun): Promise<RunRow> {
@@ -35,6 +36,7 @@ export async function insertRun(r: NewRun): Promise<RunRow> {
     job_id: null,
     error: null,
     progress_json: null,
+    slots_json: null,
   };
 
   const sql = getDb();
@@ -73,4 +75,11 @@ export async function setRunJobId(id: string, jobId: string): Promise<void> {
 export async function setRunProgress(id: string, progress: unknown): Promise<void> {
   const sql = getDb();
   await sql`UPDATE runs SET progress_json = ${JSON.stringify(progress)} WHERE id = ${id}`;
+}
+
+/** Persisted once, the first time a run's post slots are planned — planPostSlots
+ *  shuffles randomly, so a resumed run reuses this instead of reshuffling. */
+export async function setRunSlots(id: string, slotsJson: string): Promise<void> {
+  const sql = getDb();
+  await sql`UPDATE runs SET slots_json = ${slotsJson} WHERE id = ${id}`;
 }
