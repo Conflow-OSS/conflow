@@ -33,6 +33,8 @@ flowchart LR
     OBJ -->|public image URLs| CDN
 ```
 
+![Architecture](<assets/Conflow.system-design.drawio.png>)
+
 ### The four kinds of component
 
 - **Edge (CDN).** The one thing every request touches first. Caches static
@@ -138,9 +140,3 @@ second or two (run inline) or genuinely slow, LLM-call slow (queue it). An
 edit that re-embeds a post, or rendering one card, are both bounded and run
 synchronously; a full generation run or a batch of forty card renders are
 not, and get queued.
-
-## Where this goes next
-
-`aws-architecture.md` maps each of the four component kinds above onto a
-specific AWS service, and explains the reasoning (and the trade-offs
-knowingly accepted) behind each choice.
